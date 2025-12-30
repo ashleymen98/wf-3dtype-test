@@ -2,6 +2,38 @@
 (function(){
   const TAG="[3DType/UI]";
 
+  // ---------------------------
+  // Version stamp (helps detect cache)
+  // ---------------------------
+  const UI_VERSION = "ui_v9_scrollfix+bg+faceChecker+repel+heat";
+  console.log(TAG, UI_VERSION, "core:", window.__WF_3DTYPE_CORE_VERSION__ || "(unknown)");
+  window.__WF_3DTYPE_UI_VERSION__ = UI_VERSION;
+
+  // ---------------------------
+  // Pane scroll / layout fix (critical)
+  // ---------------------------
+  (function injectPaneCSS(){
+    const id="__wf3dtype_pane_css_v9";
+    if(document.getElementById(id)) return;
+
+    const css = `
+      /* Make sure the pane can actually scroll (Webflow layouts often clip it) */
+      #pane, #pane-inner { max-height: 100vh; overflow: auto !important; }
+      #pane-inner { -webkit-overflow-scrolling: touch; }
+
+      /* Tweakpane inner scroll containers (class names vary across builds) */
+      #pane .tp-rotv_c, #pane [class*="rotv_c"] { max-height: 100vh; overflow: auto !important; }
+      #pane .tp-tbpv,  #pane [class*="tbpv"]   { overflow: visible; }
+
+      /* If your pane is positioned/fixed, ensure it stays usable */
+      #pane { pointer-events: auto; }
+    `;
+    const style=document.createElement("style");
+    style.id=id;
+    style.textContent=css;
+    document.head.appendChild(style);
+  })();
+
   const wait=(cond,ms=40,limit=450)=>new Promise((res,rej)=>{
     let n=0;
     const t=setInterval(()=>{
@@ -102,37 +134,6 @@
       if(!("repelAmount" in params)) params.repelAmount=80;
       if(!("repelMinDistance" in params)) params.repelMinDistance=6;
       if(!("repelClamp" in params)) params.repelClamp=140;
-
-      // ---------------------------
-      // ✅ SAFE DEFAULTS (NEW: Spin/Explode/Cylinder)
-      // ---------------------------
-      if(!("animSpinAxis" in params)) params.animSpinAxis="y";
-      if(!("animSpinDeg" in params)) params.animSpinDeg=180;
-
-      if(!("animExplodeOrigin" in params)) params.animExplodeOrigin="center";
-      if(!("animExplodeMode" in params)) params.animExplodeMode="radial";
-      if(!("animExplodeAmount" in params)) params.animExplodeAmount=55;
-      if(!("animExplodeRotDeg" in params)) params.animExplodeRotDeg=45;
-      if(!("animExplodeAxis" in params)) params.animExplodeAxis="z";
-      if(!("animExplodeRandPos" in params)) params.animExplodeRandPos=0.35;
-      if(!("animExplodeRandRot" in params)) params.animExplodeRandRot=0.6;
-
-      if(!("animCylRadius" in params)) params.animCylRadius=240;
-      if(!("animCylWrapDeg" in params)) params.animCylWrapDeg=260;
-      if(!("animCylRotateDeg" in params)) params.animCylRotateDeg=220;
-      if(!("animCylFaceOut" in params)) params.animCylFaceOut=true;
-      if(!("animCylTwistDeg" in params)) params.animCylTwistDeg=0;
-
-      if(!("hoverSpinAxis" in params)) params.hoverSpinAxis="random";
-      if(!("hoverSpinDeg" in params)) params.hoverSpinDeg=55;
-
-      if(!("hoverExplodeOrigin" in params)) params.hoverExplodeOrigin="center";
-      if(!("hoverExplodeMode" in params)) params.hoverExplodeMode="radial";
-      if(!("hoverExplodeAmount" in params)) params.hoverExplodeAmount=35;
-      if(!("hoverExplodeRotDeg" in params)) params.hoverExplodeRotDeg=28;
-      if(!("hoverExplodeAxis" in params)) params.hoverExplodeAxis="z";
-      if(!("hoverExplodeRandPos" in params)) params.hoverExplodeRandPos=0.45;
-      if(!("hoverExplodeRandRot" in params)) params.hoverExplodeRandRot=0.7;
 
       const Pane = window.Tweakpane.Pane;
       const pane = new Pane({ container: root, title: "Controls" });
@@ -621,63 +622,19 @@
       // Motion
       // ---------------------------
       const fAnim=tMotion.addFolder({title:"Animation"});
-
-      fAnim.addBinding(params,"animPreset",{label:"preset",options:{
-        "Depth":"depth",
-        "Twist":"twist",
-        "Wobble":"wobble",
-        "Inflate":"inflate",
-        "Spin (axis)":"spin",
-        "Explode":"explode",
-        "Cylinder":"cylinder"
-      }});
-
+      fAnim.addBinding(params,"animPreset",{label:"preset",options:{"Depth":"depth","Twist":"twist","Wobble":"wobble","Inflate":"inflate"}});
       fAnim.addBinding(params,"animSpeed",{label:"speed",min:.1,max:4,step:.05});
       fAnim.addBinding(params,"animStagger",{label:"stagger",min:0,max:.3,step:.005});
-      fAnim.addBinding(params,"animEase",{label:"ease",options:{
-        "power2.inOut":"power2.inOut",
-        "sine.inOut":"sine.inOut",
-        "expo.inOut":"expo.inOut",
-        "elastic.out(1,0.35)":"elastic.out(1,0.35)",
-        "steps(6)":"steps(6)"
-      }});
+      fAnim.addBinding(params,"animEase",{label:"ease",options:{"power2.inOut":"power2.inOut","sine.inOut":"sine.inOut","expo.inOut":"expo.inOut","elastic.out(1,0.35)":"elastic.out(1,0.35)","steps(6)":"steps(6)"}});
       fAnim.addBinding(params,"animLoop",{label:"loop"});
       fAnim.addBinding(params,"animStaggerMode",{label:"stagger by",options:{Character:"char",Word:"word",Line:"line"}});
       fAnim.addBinding(params,"animStaggerFrom",{label:"direction",options:{Start:"start",End:"end",Center:"center",Edges:"edges",Random:"random"}});
       fAnim.addBinding(params,"animMinPct",{label:"min % depth",min:0,max:100,step:1});
       fAnim.addBinding(params,"animMaxPct",{label:"max % depth",min:0,max:200,step:1});
-
-      // legacy / shared
-      fAnim.addBinding(params,"animAxis",{label:"axis (legacy)",options:{X:"x",Y:"y"}});
+      fAnim.addBinding(params,"animAxis",{label:"axis",options:{X:"x",Y:"y"}});
       fAnim.addBinding(params,"animRotateDeg",{label:"rotate deg",min:0,max:180,step:1});
       fAnim.addBinding(params,"animInflate",{label:"inflate",min:0,max:.6,step:.01});
       fAnim.addBinding(params,"animAlsoDepth",{label:"also depth"});
-
-      // NEW: Spin
-      const fSpin = fAnim.addFolder({title:"Spin"});
-      fSpin.addBinding(params,"animSpinAxis",{label:"axis",options:{X:"x",Y:"y",Z:"z"}});
-      fSpin.addBinding(params,"animSpinDeg",{label:"deg",min:0,max:720,step:1});
-
-      // NEW: Explode
-      const fExplode = fAnim.addFolder({title:"Explode"});
-      fExplode.addBinding(params,"animExplodeOrigin",{label:"origin",options:{Center:"center",Word:"word",Line:"line"}});
-      fExplode.addBinding(params,"animExplodeMode",{label:"mode",options:{
-        Radial:"radial", Swirl:"swirl", Random:"random", Up:"up", Down:"down", Left:"left", Right:"right"
-      }});
-      fExplode.addBinding(params,"animExplodeAmount",{label:"amount",min:0,max:280,step:1});
-      fExplode.addBinding(params,"animExplodeRotDeg",{label:"rot deg",min:0,max:360,step:1});
-      fExplode.addBinding(params,"animExplodeAxis",{label:"rot axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
-      fExplode.addBinding(params,"animExplodeRandPos",{label:"rand pos",min:0,max:1,step:0.01});
-      fExplode.addBinding(params,"animExplodeRandRot",{label:"rand rot",min:0,max:1,step:0.01});
-
-      // NEW: Cylinder
-      const fCyl = fAnim.addFolder({title:"Cylinder"});
-      fCyl.addBinding(params,"animCylRadius",{label:"radius",min:40,max:900,step:1});
-      fCyl.addBinding(params,"animCylWrapDeg",{label:"wrap deg",min:10,max:720,step:1});
-      fCyl.addBinding(params,"animCylRotateDeg",{label:"rotate deg",min:0,max:1440,step:1});
-      fCyl.addBinding(params,"animCylFaceOut",{label:"face out"});
-      fCyl.addBinding(params,"animCylTwistDeg",{label:"twist",min:-180,max:180,step:1});
-
       fAnim.addButton({title:"Play"}).on("click",()=>{window.__tp_animPlaying=true;window.playAnimation();});
       fAnim.addButton({title:"Stop"}).on("click",()=>{window.__tp_animPlaying=false;window.stopAnimation();});
 
@@ -695,12 +652,7 @@
       fBreath.addBinding(params,"breathAmount",{label:"amount",min:0,max:0.20,step:0.005});
 
       const fHover=tMotion.addFolder({title:"Hover"});
-      fHover.addBinding(params,"hoverMode",{label:"mode",options:{
-        Lift:"lift",Rotate:"rotate",Tilt:"tilt",Pulse:"pulse",Repel:"repel",
-        "Spin (axis)":"spin",
-        Explode:"explode",
-        None:"none"
-      }});
+      fHover.addBinding(params,"hoverMode",{label:"mode",options:{Lift:"lift",Rotate:"rotate",Tilt:"tilt",Pulse:"pulse",Repel:"repel",None:"none"}});
       fHover.addBinding(params,"proximityLift",{label:"enabled"});
       fHover.addBinding(params,"proximityRadiusWorld",{label:"radius",min:10,max:800,step:1});
       fHover.addBinding(params,"proximityLiftAmount",{label:"lift",min:0,max:400,step:1});
@@ -715,23 +667,6 @@
       fRepel.addBinding(params,"repelAmount",{label:"amount",min:0,max:400,step:1});
       fRepel.addBinding(params,"repelMinDistance",{label:"min dist",min:0.1,max:40,step:0.1});
       fRepel.addBinding(params,"repelClamp",{label:"clamp",min:0,max:600,step:1});
-
-      // NEW hover spin
-      const fHoverSpin = fHover.addFolder({title:"Spin"});
-      fHoverSpin.addBinding(params,"hoverSpinAxis",{label:"axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
-      fHoverSpin.addBinding(params,"hoverSpinDeg",{label:"deg",min:0,max:360,step:1});
-
-      // NEW hover explode
-      const fHoverExplode = fHover.addFolder({title:"Explode"});
-      fHoverExplode.addBinding(params,"hoverExplodeOrigin",{label:"origin",options:{Center:"center",Word:"word",Line:"line"}});
-      fHoverExplode.addBinding(params,"hoverExplodeMode",{label:"mode",options:{
-        Radial:"radial", Swirl:"swirl", Random:"random", Up:"up", Down:"down", Left:"left", Right:"right"
-      }});
-      fHoverExplode.addBinding(params,"hoverExplodeAmount",{label:"amount",min:0,max:220,step:1});
-      fHoverExplode.addBinding(params,"hoverExplodeRotDeg",{label:"rot deg",min:0,max:240,step:1});
-      fHoverExplode.addBinding(params,"hoverExplodeAxis",{label:"rot axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
-      fHoverExplode.addBinding(params,"hoverExplodeRandPos",{label:"rand pos",min:0,max:1,step:0.01});
-      fHoverExplode.addBinding(params,"hoverExplodeRandRot",{label:"rand rot",min:0,max:1,step:0.01});
 
       const fMag=tMotion.addFolder({title:"Magnetic Sweep"});
       fMag.addBinding(params,"magneticSweepOn",{label:"enabled"});
@@ -769,11 +704,7 @@
 
       const ANIM_KEYS=new Set([
         "animPreset","animSpeed","animStagger","animMinPct","animMaxPct","animEase","animLoop","animStaggerMode","animStaggerFrom",
-        "animRotateDeg","animInflate","animAlsoDepth","animAxis",
-        // NEW
-        "animSpinAxis","animSpinDeg",
-        "animExplodeOrigin","animExplodeMode","animExplodeAmount","animExplodeRotDeg","animExplodeAxis","animExplodeRandPos","animExplodeRandRot",
-        "animCylRadius","animCylWrapDeg","animCylRotateDeg","animCylFaceOut","animCylTwistDeg"
+        "animRotateDeg","animInflate","animAlsoDepth","animAxis"
       ]);
 
       const GRAD_ANIM_KEYS=new Set([

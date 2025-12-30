@@ -1,3 +1,4 @@
+// wf-3dtype-ui.js
 (function(){
   const TAG="[3DType/UI]";
 
@@ -509,18 +510,15 @@
       const fFill=tLook.addFolder({title:"Fill"});
       const fFace=fFill.addFolder({title:"Faces"});
 
-      // ✅ face mode now includes Checker
       fFace.addBinding(params,"faceMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient",Checker:"checker"}});
       fFace.addBinding(params,"faceUVSpace",{label:"UV",options:{Glyph:"glyph",World:"world"}});
       fFace.addBinding(params,"faceSolid",{view:"color"});
 
-      // gradient controls (unchanged)
       fFace.addBinding(params,"faceGradA",{label:"A",view:"color"}); fFace.addBinding(params,"faceStopA",{label:"A stop",min:0,max:1,step:.01});
       fFace.addBinding(params,"faceGradB",{label:"B",view:"color"}); fFace.addBinding(params,"faceStopB",{label:"B stop",min:0,max:1,step:.01});
       fFace.addBinding(params,"faceGradC",{label:"C",view:"color"}); fFace.addBinding(params,"faceStopC",{label:"C stop",min:0,max:1,step:.01});
       fFace.addBinding(params,"faceGradDir",{label:"dir",options:{Vertical:"vertical",Horizontal:"horizontal",Diagonal:"diagonal"}});
 
-      // ✅ new checker controls (only meaningful when faceMode=checker)
       const fFaceChk = fFace.addFolder({title:"Face Checker"});
       fFaceChk.addBinding(params,"faceChkScale",{label:"scale",min:4,max:200,step:1});
       fFaceChk.addBinding(params,"faceChkLineWidth",{label:"line width",min:0,max:40,step:1});
@@ -530,7 +528,6 @@
       fFaceChk.addBinding(params,"faceChkLineColor",{label:"line",view:"color"});
 
       function refreshFaceUI(){
-        // show/hide the Face Checker folder based on mode
         fFaceChk.element.style.display = (params.faceMode==="checker") ? "" : "none";
       }
       refreshFaceUI();
@@ -590,7 +587,7 @@
       fCam.addButton({title:"Reframe"}).on("click",()=>window.reframeToText());
 
       // ---------------------------
-      // Motion (unchanged)
+      // Motion
       // ---------------------------
       const fAnim=tMotion.addFolder({title:"Animation"});
       fAnim.addBinding(params,"animPreset",{label:"preset",options:{"Depth":"depth","Twist":"twist","Wobble":"wobble","Inflate":"inflate"}});
@@ -665,18 +662,10 @@
 
       const REBUILD_KEYS=new Set([
         "aspect","margin","size","depth","charSpacing","lineSpacing","align",
-
-        // faces
         "faceMode","faceUVSpace","faceSolid",
         "faceGradA","faceGradB","faceGradC","faceStopA","faceStopB","faceStopC","faceGradDir",
-
-        // ✅ new face checker keys
         "faceChkScale","faceChkLineWidth","faceChkRotate","faceChkColorA","faceChkColorB","faceChkLineColor",
-
-        // extrusion
         "sideMode","sideUVSpace","sideSolid","sideGradA","sideGradB","sideGradC","sideStopA","sideStopB","sideStopC","sideGradDir",
-
-        // stroke + light
         "stroke","strokeWidth","edgeThreshold","strokeFacesOnly",
         "lightingMode"
       ]);
@@ -715,7 +704,6 @@
         }
       });
 
-      // initial build
       window.buildText();
       window._syncFXUniforms();
       try{ window.__rebuildZControls?.(); }catch(e){}
@@ -733,5 +721,4 @@
 
     buildEverything();
   }
-
 })();

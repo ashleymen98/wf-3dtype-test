@@ -13,9 +13,10 @@ const gsap = window.gsap;
 // ---------------------------
 // Version stamp (helps detect cache)
 // ---------------------------
-const CORE_VERSION = "core_v9_bg+faceChecker+repel+heat";
+const CORE_VERSION = "core_v10_spin+explode+cylinder";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
+
 
 // ---------------------------
 // Single-instance lifecycle
@@ -152,6 +153,26 @@ const params = (window.params ||= {
   animAlsoDepth: true,
   animAxis: "y",
 
+    // NEW: Spin preset
+  animSpinAxis: "y",          // x | y | z | random
+  animSpinDeg: 180,
+
+  // NEW: Explode preset
+  animExplodeDist: 120,
+  animExplodeDistRand: 0.35,  // 0..1
+  animExplodeDir: "radial",   // radial | swirl | up | random
+  animExplodeZ: 0,            // optional Z push
+  animExplodeRotDeg: 140,
+  animExplodeRotRand: 0.5,    // 0..1
+  animExplodeAxis: "random",  // x | y | z | random
+
+  // NEW: Cylinder preset
+  cylRadius: 240,
+  cylArcDeg: 220,
+  cylLineOffsetDeg: 14,
+  cylFace: "out",             // out | in | none
+  cylTiltDeg: 0,
+
   // Hover
   hoverMode: "lift",
   proximityLift: true,
@@ -163,6 +184,18 @@ const params = (window.params ||= {
   hoverRotateDeg: 20,
   hoverTiltDeg: 18,
   hoverPulse: 0.12,
+
+    // NEW: Hover spin / explode
+  hoverSpinAxis: "random",     // x | y | z | random
+  hoverSpinDeg: 35,
+
+  hoverExplodeAmount: 90,
+  hoverExplodeRand: 0.35,
+  hoverExplodeRotateDeg: 120,
+  hoverExplodeAxis: "random",  // x | y | z | random
+  hoverExplodeClamp: 220,
+  hoverExplodeZ: 0,
+
 
   // Repel
   repelAmount: 80,
@@ -220,11 +253,53 @@ const params = (window.params ||= {
   sideGradSpeed: 0.035,
   sideGradAngle: 25,
 
+  
+
+
   // Per-character Z
   charZOffsets: [],
 });
 
 window.params = params;
+
+// ---------------------------
+// NEW: Ensure new params exist even if window.params already existed
+// ---------------------------
+(function ensureNewParams(){
+  const p = params;
+  const ensure = (k,v)=>{ if(!(k in p)) p[k]=v; };
+
+  // Anim presets + controls
+  ensure("animPreset", "depth");
+  ensure("animSpinAxis","y");
+  ensure("animSpinDeg",180);
+
+  ensure("animExplodeDist",120);
+  ensure("animExplodeDistRand",0.35);
+  ensure("animExplodeDir","radial");
+  ensure("animExplodeZ",0);
+  ensure("animExplodeRotDeg",140);
+  ensure("animExplodeRotRand",0.5);
+  ensure("animExplodeAxis","random");
+
+  // Cylinder
+  ensure("cylRadius",240);
+  ensure("cylArcDeg",220);
+  ensure("cylLineOffsetDeg",14);
+  ensure("cylFace","out");
+  ensure("cylTiltDeg",0);
+
+  // Hover modes + controls
+  ensure("hoverSpinAxis","random");
+  ensure("hoverSpinDeg",35);
+
+  ensure("hoverExplodeAmount",90);
+  ensure("hoverExplodeRand",0.35);
+  ensure("hoverExplodeRotateDeg",120);
+  ensure("hoverExplodeAxis","random");
+  ensure("hoverExplodeClamp",220);
+  ensure("hoverExplodeZ",0);
+})();
 
 // ---------------------------
 // Utils
@@ -1148,7 +1223,9 @@ function _updateDepth(entry){
   entry.mesh.scale.z = Math.max(0.0001, (entry.depthF ?? 1) * breath);
   applyExtrusionTransform(entry);
 
-  entry.group.position.z = (entry.baseGroupZ ?? 0) + zoff;
+  const animZ = entry.animZ ?? 0;
+  const hoverZ = entry.hoverZ ?? 0;
+  entry.group.position.z = (entry.baseGroupZ ?? 0) + zoff + animZ + hoverZ;
 }
 
 function _ensureCharZOffsets(){
@@ -1260,7 +1337,17 @@ function buildText(){
         zOffset: 0,
         lineIndex: lineIdx,
         hoverF: 0,
-        overlayIndex: globalGlyphIndex
+        overlayIndex: globalGlyphIndex,
+
+                // NEW: stable seed + animation offsets
+        _seed: globalGlyphIndex + 1,
+        animX: 0, animY: 0, animZ: 0,
+        animRX: 0, animRY: 0, animRZ: 0,
+        animS: 1,
+        hoverZ: 0,
+        _lineMinX: 0,
+        _lineMaxX: 0,
+
       };
 
       _updateDepth(entry);
@@ -1298,6 +1385,22 @@ function buildText(){
   const sideWorld = (params.sideMode==="gradient" && params.sideUVSpace==="world");
 
   applyWorldUVsNonIndexed(meshes, params.depth, faceWorld, sideWorld);
+
+    // NEW: per-line bounds for cylinder mapping
+  const boundsByLine = new Map();
+  for(const g of glyphs){
+    const i = g.lineIndex || 0;
+    const b = boundsByLine.get(i) || {min: Infinity, max: -Infinity};
+    b.min = Math.min(b.min, g.baseGroupX || 0);
+    b.max = Math.max(b.max, g.baseGroupX || 0);
+    boundsByLine.set(i, b);
+  }
+  for(const g of glyphs){
+    const b = boundsByLine.get(g.lineIndex || 0) || {min:0,max:0};
+    g._lineMinX = b.min;
+    g._lineMaxX = b.max;
+  }
+
 
   textGroup.updateMatrixWorld(true);
   _refreshStablePlane();
@@ -1379,84 +1482,328 @@ window.reframeToText = reframeToText;
 // ---------------------------
 // GSAP Preset Animation (unchanged)
 // ---------------------------
+// ---------------------------
+// GSAP Preset Animation (UPDATED: spin/explode/cylinder)
+// ---------------------------
 function stopAnimation(){
   if(tl){ tl.kill(); tl=null; }
+
+  // Reset anim offsets
   for(const g of glyphs){
-    g.depthF=1;
-    g.group.rotation.x=g.baseRotX||0;
-    g.group.rotation.y=g.baseRotY||0;
-    g.group.rotation.z=g.baseRotZ||0;
-    g.group.scale.set(g.baseScaleX||1,g.baseScaleY||1,g.baseScaleZ||1);
+    g.depthF = 1;
+
+    g.animX = 0; g.animY = 0; g.animZ = 0;
+    g.animRX = 0; g.animRY = 0; g.animRZ = 0;
+    g.animS = 1;
+
+    g.hoverZ = 0;
+
+    g.group.position.x = (g.baseGroupX||0);
+    g.group.position.y = (g.baseGroupY||0);
+
+    g.group.rotation.x = (g.baseRotX||0);
+    g.group.rotation.y = (g.baseRotY||0);
+    g.group.rotation.z = (g.baseRotZ||0);
+
+    g.group.scale.set((g.baseScaleX||1),(g.baseScaleY||1),(g.baseScaleZ||1));
+
     _updateDepth(g);
   }
   _applyCharZOffsetsFromParams();
 }
 window.stopAnimation = stopAnimation;
 
+// deterministic helpers
+function _hash01(n){
+  const x = Math.sin(n*127.1 + 311.7) * 43758.5453123;
+  return x - Math.floor(x);
+}
+function _hashSigned(n){ return _hash01(n)*2 - 1; }
+
 function playAnimation(){
   if(!gsap || !glyphs.length) return;
   if(tl){ tl.kill(); tl=null; }
 
-  const duration=Number(params.animSpeed||1.2);
-  const stagger=Number(params.animStagger||.03);
-  const ease=params.animEase||"power2.inOut";
-  const loop=!!params.animLoop;
-  const minF=Math.max(0,Number(params.animMinPct||0)/100);
-  const maxF=Math.max(0,Number(params.animMaxPct||100)/100);
+  const duration = Math.max(0.05, Number(params.animSpeed||1.2));
+  const stagger  = Math.max(0, Number(params.animStagger||0.03));
+  const ease     = params.animEase || "power2.inOut";
+  const loop     = !!params.animLoop;
 
+  const minF = Math.max(0, Number(params.animMinPct||0)/100);
+  const maxF = Math.max(0, Number(params.animMaxPct||100)/100);
+
+  // grouping (same as before)
   let groups=[];
   if(params.animStaggerMode==="word") groups=wordGroups;
   else if(params.animStaggerMode==="line") groups=lineGroups;
   else groups=glyphs.map(g=>[g]);
 
-  const proxies=groups.filter(g=>g&&g.length).map(members=>({f:minF,rx:0,ry:0,rz:0,s:1,members}));
-  const rotRad=THREE.MathUtils.degToRad(Number(params.animRotateDeg||35));
-  const inflateAmt=Number(params.animInflate||.18);
+  const proxies = groups
+    .filter(g=>g && g.length)
+    .map((members, idx)=>({
+      members,
+      idx,
+      // animated channels
+      f: minF,
+      rx: 0, ry: 0, rz: 0,
+      s: 1,
+      tx: 0, ty: 0, tz: 0,
+    }));
 
-  function applyProxy(p){
+  const deg = d => THREE.MathUtils.degToRad(Number(d||0));
+
+  function proxyCenter(p){
+    let cx=0, cy=0;
+    for(const m of p.members){ cx += (m.baseGroupX||0); cy += (m.baseGroupY||0); }
+    const inv = 1/Math.max(1,p.members.length);
+    return {x:cx*inv, y:cy*inv};
+  }
+
+  function setAnimToMembers(p){
     for(const m of p.members){
-      m.group.rotation.x=(m.baseRotX||0)+(p.rx||0);
-      m.group.rotation.y=(m.baseRotY||0)+(p.ry||0);
-      m.group.rotation.z=(m.baseRotZ||0)+(p.rz||0);
-
-      const bsx=(m.baseScaleX||1),bsy=(m.baseScaleY||1),bsz=(m.baseScaleZ||1);
-      m.group.scale.set(bsx*(p.s||1),bsy*(p.s||1),bsz);
-
       m.depthF = (typeof p.f==="number") ? p.f : 1;
+
+      m.animRX = p.rx || 0;
+      m.animRY = p.ry || 0;
+      m.animRZ = p.rz || 0;
+      m.animS  = (typeof p.s==="number") ? p.s : 1;
+
+      m.animX = p.tx || 0;
+      m.animY = p.ty || 0;
+      m.animZ = p.tz || 0;
+
+      // Z is applied inside _updateDepth
       _updateDepth(m);
     }
   }
 
-  for(const p of proxies) applyProxy(p);
+  // init apply
+  proxies.forEach(setAnimToMembers);
 
-  tl=gsap.timeline({repeat:loop?-1:0,yoyo:true});
-  const preset=params.animPreset||"depth";
-  const alsoDepth=(preset==="depth")?true:!!params.animAlsoDepth;
+  const preset = (params.animPreset||"depth").toLowerCase();
+  const alsoDepth = (preset==="depth") ? true : !!params.animAlsoDepth;
 
-  const tweenVars={
-    duration, ease,
-    stagger:{each:stagger,from:params.animStaggerFrom},
-    onUpdate:()=>{ for(const p of proxies) applyProxy(p); _applyCharZOffsetsFromParams(); }
+  // NOTE: while anim is playing, we snap transforms so hover reset doesn’t “fight” GSAP
+  window.__tp_animPlaying = true;
+
+  // Build timeline
+  const yoyoDefault = (preset!=="cylinder"); // cylinder should spin continuously
+  tl = gsap.timeline({ repeat: loop ? -1 : 0, yoyo: yoyoDefault });
+
+  const tweenVars = {
+    duration,
+    ease,
+    stagger: { each: stagger, from: params.animStaggerFrom },
+    onUpdate: ()=>{
+      proxies.forEach(setAnimToMembers);
+      _applyCharZOffsetsFromParams();
+    },
+    onComplete: ()=>{
+      if(!loop) window.__tp_animPlaying = false;
+    }
   };
 
-  for(const p of proxies){ p.f=alsoDepth?minF:undefined; p.rx=0; p.ry=0; p.rz=0; p.s=1; }
-
-  const axis=(params.animAxis||"y").toLowerCase();
-  const depthTarget=maxF;
-
-  if(preset==="depth"){ tl.to(proxies,{...tweenVars,f:depthTarget},0); }
-  else if(preset==="twist"){
-    const vars={...tweenVars}; if(axis==="x") vars.rx=rotRad; else vars.ry=rotRad;
-    if(alsoDepth) vars.f=depthTarget; tl.to(proxies,vars,0);
-  }else if(preset==="wobble"){
-    const vars={...tweenVars,rz:rotRad}; if(alsoDepth) vars.f=depthTarget; tl.to(proxies,vars,0);
-  }else if(preset==="inflate"){
-    const vars={...tweenVars,s:1+inflateAmt}; if(alsoDepth) vars.f=depthTarget; tl.to(proxies,vars,0);
-  }else{
-    tl.to(proxies,{...tweenVars,f:depthTarget},0);
+  // reset channels
+  for(const p of proxies){
+    p.f = alsoDepth ? minF : undefined;
+    p.rx=0; p.ry=0; p.rz=0;
+    p.s=1;
+    p.tx=0; p.ty=0; p.tz=0;
   }
+
+  if(preset==="depth"){
+    tl.to(proxies, { ...tweenVars, f: maxF }, 0);
+    return;
+  }
+
+  if(preset==="twist"){
+    const axis = (params.animAxis||"y").toLowerCase();
+    const rotRad = deg(params.animRotateDeg||35);
+    const vars = { ...tweenVars };
+    if(axis==="x") vars.rx = rotRad;
+    else vars.ry = rotRad;
+    if(alsoDepth) vars.f = maxF;
+    tl.to(proxies, vars, 0);
+    return;
+  }
+
+  if(preset==="wobble"){
+    const rotRad = deg(params.animRotateDeg||35);
+    const vars = { ...tweenVars, rz: rotRad };
+    if(alsoDepth) vars.f = maxF;
+    tl.to(proxies, vars, 0);
+    return;
+  }
+
+  if(preset==="inflate"){
+    const inflateAmt = Number(params.animInflate||0.18);
+    const vars = { ...tweenVars, s: 1 + inflateAmt };
+    if(alsoDepth) vars.f = maxF;
+    tl.to(proxies, vars, 0);
+    return;
+  }
+
+  if(preset==="spin"){
+    const axis = (params.animSpinAxis || params.animAxis || "y").toLowerCase();
+    const spinRad = deg(params.animSpinDeg ?? params.animRotateDeg ?? 180);
+
+    // For random axis we pick per proxy (stable)
+    for(const p of proxies){
+      const pick = axis==="random"
+        ? (["x","y","z"][Math.floor(_hash01(p.idx+33)*3)] || "y")
+        : axis;
+      p.__spinAxis = pick;
+    }
+
+    const vars = { ...tweenVars };
+    // we animate generic rz then map in onUpdate by assigning to rx/ry/rz.
+    // easiest: animate a temp "spin" scalar and remap
+    proxies.forEach(p=>p.__spin=0);
+
+    tl.to(proxies, {
+      ...tweenVars,
+      __spin: spinRad,
+      onUpdate: ()=>{
+        for(const p of proxies){
+          p.rx = 0; p.ry = 0; p.rz = 0;
+          const a = p.__spin || 0;
+          if(p.__spinAxis==="x") p.rx = a;
+          else if(p.__spinAxis==="z") p.rz = a;
+          else p.ry = a;
+          if(alsoDepth) p.f = maxF;
+        }
+        proxies.forEach(setAnimToMembers);
+        _applyCharZOffsetsFromParams();
+      }
+    }, 0);
+
+    return;
+  }
+
+  if(preset==="explode"){
+    const dist = Number(params.animExplodeDist||120);
+    const distRand = Math.max(0, Math.min(1, Number(params.animExplodeDistRand||0)));
+    const mode = (params.animExplodeDir||"radial").toLowerCase();
+    const zAmt = Number(params.animExplodeZ||0);
+
+    const rotDeg = Number(params.animExplodeRotDeg||140);
+    const rotRand = Math.max(0, Math.min(1, Number(params.animExplodeRotRand||0)));
+    const axis = (params.animExplodeAxis||"random").toLowerCase();
+
+    for(const p of proxies){
+      const c = proxyCenter(p);
+      let vx=0, vy=0;
+
+      if(mode==="up"){
+        vx = _hashSigned(p.idx+10) * 0.35;
+        vy = 1;
+      }else if(mode==="swirl"){
+        // tangential around origin
+        const dx=c.x, dy=c.y;
+        const len=Math.hypot(dx,dy) || 1;
+        vx = (-dy/len);
+        vy = ( dx/len);
+      }else if(mode==="random"){
+        const a = _hash01(p.idx+20) * Math.PI*2;
+        vx = Math.cos(a); vy = Math.sin(a);
+      }else{
+        // radial
+        const dx=c.x, dy=c.y;
+        const len=Math.hypot(dx,dy) || 1;
+        vx = dx/len; vy = dy/len;
+      }
+
+      const mag = dist * (1 + _hashSigned(p.idx+40) * distRand);
+      p.tx = vx * mag;
+      p.ty = vy * mag;
+      p.tz = zAmt * (1 + _hashSigned(p.idx+41) * distRand);
+
+      // rotation
+      const r = deg(rotDeg) * (1 + _hashSigned(p.idx+50) * rotRand);
+      const pick = axis==="random"
+        ? (["x","y","z"][Math.floor(_hash01(p.idx+51)*3)] || "y")
+        : axis;
+
+      p.rx=0; p.ry=0; p.rz=0;
+      if(pick==="x") p.rx = r;
+      else if(pick==="z") p.rz = r;
+      else p.ry = r;
+
+      if(alsoDepth) p.f = maxF;
+    }
+
+    tl.to(proxies, { ...tweenVars, tx: (i)=>proxies[i].tx, ty: (i)=>proxies[i].ty, tz: (i)=>proxies[i].tz,
+                     rx: (i)=>proxies[i].rx, ry: (i)=>proxies[i].ry, rz: (i)=>proxies[i].rz,
+                     f: alsoDepth ? maxF : undefined }, 0);
+    return;
+  }
+
+  if(preset==="cylinder"){
+    const state = { phase: 0 };
+    const dir = 1; // could expose later
+    const spin = Math.PI*2*dir;
+
+    function applyCylinder(phase){
+      const radius = Number(params.cylRadius||240);
+      const arc = deg(params.cylArcDeg||220);
+      const lineOff = deg(params.cylLineOffsetDeg||14);
+      const face = (params.cylFace||"out").toLowerCase(); // out|in|none
+      const tilt = deg(params.cylTiltDeg||0);
+
+      for(const g of glyphs){
+        const minX = g._lineMinX ?? 0;
+        const maxX = g._lineMaxX ?? 0;
+        const denom = Math.max(1e-6, (maxX - minX));
+        const t = ((g.baseGroupX||0) - minX) / denom; // 0..1 across the line
+
+        const ang = (t - 0.5) * arc + phase + (g.lineIndex||0)*lineOff;
+
+        const x = Math.sin(ang) * radius;
+        const z = Math.cos(ang) * radius;
+
+        g.animX = x - (g.baseGroupX||0);
+        g.animY = 0;
+        g.animZ = z - (g.baseGroupZ||0);
+
+        g.animRX = tilt;
+        g.animRZ = 0;
+
+        if(face==="none"){
+          g.animRY = 0;
+        }else if(face==="in"){
+          g.animRY = ang - Math.PI/2;
+        }else{
+          g.animRY = ang + Math.PI/2;
+        }
+
+        if(alsoDepth) g.depthF = maxF;
+        _updateDepth(g);
+      }
+    }
+
+    // continuous, no yoyo
+    tl = gsap.timeline({ repeat: loop ? -1 : 0, yoyo: false });
+    tl.to(state, {
+      phase: spin,
+      duration,
+      ease: "none",
+      onUpdate: ()=>{
+        applyCylinder(state.phase);
+        _applyCharZOffsetsFromParams();
+      },
+      onComplete: ()=>{
+        if(!loop) window.__tp_animPlaying = false;
+      }
+    }, 0);
+
+    return;
+  }
+
+  // fallback
+  tl.to(proxies, { ...tweenVars, f: maxF }, 0);
 }
 window.playAnimation = playAnimation;
+
 
 // ---------------------------
 // Hover (repel fixed) + heat world position
@@ -1491,18 +1838,34 @@ function getCursorLocalOnTextPlane(outLocal){
 }
 
 function resetHoverTransforms(){
-  const chase=clamp(Number(params.liftSmoothing||.18),.001,1);
+  const animSnap = !!window.__tp_animPlaying;
+  const chase = animSnap ? 1 : clamp(Number(params.liftSmoothing||.18),.001,1);
+
   for(const g of glyphs){
-    g.group.position.x=lerp(g.group.position.x,(g.baseGroupX||0),chase);
-    g.group.position.y=lerp(g.group.position.y,(g.baseGroupY||0),chase);
+    const bx = (g.baseGroupX||0) + (g.animX||0);
+    const by = (g.baseGroupY||0) + (g.animY||0);
 
-    g.group.rotation.x=lerp(g.group.rotation.x,(g.baseRotX||0),chase);
-    g.group.rotation.y=lerp(g.group.rotation.y,(g.baseRotY||0),chase);
-    g.group.rotation.z=lerp(g.group.rotation.z,(g.baseRotZ||0),chase);
+    const brx = (g.baseRotX||0) + (g.animRX||0);
+    const bry = (g.baseRotY||0) + (g.animRY||0);
+    const brz = (g.baseRotZ||0) + (g.animRZ||0);
 
-    g.group.scale.x=lerp(g.group.scale.x,(g.baseScaleX||1),chase);
-    g.group.scale.y=lerp(g.group.scale.y,(g.baseScaleY||1),chase);
-    g.group.scale.z=lerp(g.group.scale.z,(g.baseScaleZ||1),chase);
+    const bs = (typeof g.animS==="number") ? g.animS : 1;
+    const bsx = (g.baseScaleX||1) * bs;
+    const bsy = (g.baseScaleY||1) * bs;
+    const bsz = (g.baseScaleZ||1); // keep Z scale stable like before
+
+    g.group.position.x = lerp(g.group.position.x, bx, chase);
+    g.group.position.y = lerp(g.group.position.y, by, chase);
+
+    g.group.rotation.x = lerp(g.group.rotation.x, brx, chase);
+    g.group.rotation.y = lerp(g.group.rotation.y, bry, chase);
+    g.group.rotation.z = lerp(g.group.rotation.z, brz, chase);
+
+    g.group.scale.x = lerp(g.group.scale.x, bsx, chase);
+    g.group.scale.y = lerp(g.group.scale.y, bsy, chase);
+    g.group.scale.z = lerp(g.group.scale.z, bsz, chase);
+
+    g.hoverZ = 0;
   }
 }
 
@@ -1527,10 +1890,13 @@ function updateHoverEffects(){
 
   const r=Math.max(1e-6,Number(params.proximityRadiusWorld||140));
   const invR=1/r;
-  const chase=clamp(Number(params.liftSmoothing||.18),.001,1);
+
+  const animSnap = !!window.__tp_animPlaying;
+  const chase = animSnap ? 1 : clamp(Number(params.liftSmoothing||.18),.001,1);
+
   const mode=params.proximityFalloff||"smooth";
   const lift=Number(params.proximityLiftAmount||60);
-  const rot=THREE.MathUtils.degToRad(Number(params.hoverRotateDeg||20));
+  const rotZ=THREE.MathUtils.degToRad(Number(params.hoverRotateDeg||20));
   const tilt=THREE.MathUtils.degToRad(Number(params.hoverTiltDeg||18));
   const pulse=Number(params.hoverPulse||.12);
   const hoverMode=(params.hoverMode||"lift").toLowerCase();
@@ -1543,8 +1909,10 @@ function updateHoverEffects(){
   let maxF=0;
 
   for(const g of glyphs){
-    const c={x:g.baseX||0,y:g.baseGroupY||0};
-    const dx=cursorLocal.x-c.x, dy=cursorLocal.y-c.y;
+    const cx = (g.baseGroupX||0) + (g.animX||0);
+    const cy = (g.baseGroupY||0) + (g.animY||0);
+
+    const dx=cursorLocal.x-cx, dy=cursorLocal.y-cy;
     const d=Math.sqrt(dx*dx+dy*dy);
     const u=d<r?(1-d*invR):0;
     g.hoverF=falloff(u,mode);
@@ -1554,32 +1922,48 @@ function updateHoverEffects(){
 
   for(const g of glyphs){
     const f=g.hoverF||0;
-    const c={x:g.baseX||0,y:g.baseGroupY||0};
-    const dx=cursorLocal.x-c.x, dy=cursorLocal.y-c.y;
+
+    const bx = (g.baseGroupX||0) + (g.animX||0);
+    const by = (g.baseGroupY||0) + (g.animY||0);
+
+    const baseRX = (g.baseRotX||0) + (g.animRX||0);
+    const baseRY = (g.baseRotY||0) + (g.animRY||0);
+    const baseRZ = (g.baseRotZ||0) + (g.animRZ||0);
+
+    const bs = (typeof g.animS==="number") ? g.animS : 1;
+    let sx=(g.baseScaleX||1) * bs;
+    let sy=(g.baseScaleY||1) * bs;
+    let sz=(g.baseScaleZ||1);
+
+    const dx=cursorLocal.x-bx, dy=cursorLocal.y-by;
     const d=Math.sqrt(dx*dx+dy*dy)||1;
 
-    let tx=(g.baseGroupX||0), ty=(g.baseGroupY||0);
-    let rx=(g.baseRotX||0), ry=(g.baseRotY||0), rz=(g.baseRotZ||0);
-    let sx=(g.baseScaleX||1), sy=(g.baseScaleY||1), sz=(g.baseScaleZ||1);
+    let tx=bx, ty=by;
+    let rx=baseRX, ry=baseRY, rz=baseRZ;
+
+    g.hoverZ = 0;
 
     if(hoverMode==="lift"){
       ty += lift*f;
+
     }else if(hoverMode==="rotate"){
-      rz += rot*f;
+      rz += rotZ*f;
+
     }else if(hoverMode==="tilt"){
       const nx=dx/d, ny=dy/d;
       rx += (-ny)*tilt*f;
       ry += ( nx)*tilt*f;
+
     }else if(hoverMode==="pulse"){
       const s=1+pulse*f;
       sx*=s; sy*=s;
+
     }else if(hoverMode==="repel"){
       const minD=Math.max(0.001,Number(params.repelMinDistance ?? 6));
       const amt =Number(params.repelAmount ?? 80);
       const cap =Number(params.repelClamp ?? 140);
       const dd=Math.max(d,minD);
 
-      // push AWAY from cursor
       const nx = (-dx)/dd;
       const ny = (-dy)/dd;
 
@@ -1588,6 +1972,50 @@ function updateHoverEffects(){
 
       tx += nx*push;
       ty += ny*push;
+
+    }else if(hoverMode==="spin"){
+      const axis = (params.hoverSpinAxis||"random").toLowerCase();
+      const a = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg||35)) * f;
+
+      const pick = axis==="random"
+        ? (["x","y","z"][Math.floor(_hash01((g._seed||1)+99)*3)] || "y")
+        : axis;
+
+      if(pick==="x") rx += a;
+      else if(pick==="z") rz += a;
+      else ry += a;
+
+    }else if(hoverMode==="explode"){
+      const minD=Math.max(0.001,Number(params.repelMinDistance ?? 6));
+      const amt =Number(params.hoverExplodeAmount ?? 90);
+      const cap =Number(params.hoverExplodeClamp ?? 220);
+      const rand = Math.max(0, Math.min(1, Number(params.hoverExplodeRand ?? 0.35)));
+
+      const dd=Math.max(d,minD);
+
+      const nx = (-dx)/dd;
+      const ny = (-dy)/dd;
+
+      let push = amt*f*(1 + _hashSigned((g._seed||1)+123)*rand);
+      if(push>cap) push=cap;
+
+      tx += nx*push;
+      ty += ny*push;
+
+      const z = Number(params.hoverExplodeZ||0);
+      g.hoverZ = z * f;
+
+      const axis = (params.hoverExplodeAxis||"random").toLowerCase();
+      const rdeg = Number(params.hoverExplodeRotateDeg||120);
+      const rr = THREE.MathUtils.degToRad(rdeg) * f * (1 + _hashSigned((g._seed||1)+321)*rand);
+
+      const pick = axis==="random"
+        ? (["x","y","z"][Math.floor(_hash01((g._seed||1)+222)*3)] || "y")
+        : axis;
+
+      if(pick==="x") rx += rr;
+      else if(pick==="z") rz += rr;
+      else ry += rr;
     }
 
     if(sweepOn && sweepAmt>0.0001){
@@ -1613,6 +2041,7 @@ function updateHoverEffects(){
   }
 }
 window.updateHoverEffects = updateHoverEffects;
+
 
 // ---------------------------
 // Idle wave + breathing
@@ -1706,3 +2135,4 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+

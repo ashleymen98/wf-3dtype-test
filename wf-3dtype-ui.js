@@ -622,7 +622,18 @@
       // Motion
       // ---------------------------
       const fAnim=tMotion.addFolder({title:"Animation"});
-      fAnim.addBinding(params,"animPreset",{label:"preset",options:{"Depth":"depth","Twist":"twist","Wobble":"wobble","Inflate":"inflate"}});
+fAnim.addBinding(params,"animPreset",{
+  label:"preset",
+  options:{
+    "Depth":"depth",
+    "Twist":"twist",
+    "Wobble":"wobble",
+    "Inflate":"inflate",
+    "Spin (in place)":"spin",
+    "Explode":"explode",
+    "Cylinder":"cylinder"
+  }
+});
       fAnim.addBinding(params,"animSpeed",{label:"speed",min:.1,max:4,step:.05});
       fAnim.addBinding(params,"animStagger",{label:"stagger",min:0,max:.3,step:.005});
       fAnim.addBinding(params,"animEase",{label:"ease",options:{"power2.inOut":"power2.inOut","sine.inOut":"sine.inOut","expo.inOut":"expo.inOut","elastic.out(1,0.35)":"elastic.out(1,0.35)","steps(6)":"steps(6)"}});
@@ -652,7 +663,19 @@
       fBreath.addBinding(params,"breathAmount",{label:"amount",min:0,max:0.20,step:0.005});
 
       const fHover=tMotion.addFolder({title:"Hover"});
-      fHover.addBinding(params,"hoverMode",{label:"mode",options:{Lift:"lift",Rotate:"rotate",Tilt:"tilt",Pulse:"pulse",Repel:"repel",None:"none"}});
+fHover.addBinding(params,"hoverMode",{
+  label:"mode",
+  options:{
+    Lift:"lift",
+    Rotate:"rotate",
+    "Spin (in place)":"spin",
+    Tilt:"tilt",
+    Pulse:"pulse",
+    Explode:"explode",
+    Repel:"repel",
+    None:"none"
+  }
+});
       fHover.addBinding(params,"proximityLift",{label:"enabled"});
       fHover.addBinding(params,"proximityRadiusWorld",{label:"radius",min:10,max:800,step:1});
       fHover.addBinding(params,"proximityLiftAmount",{label:"lift",min:0,max:400,step:1});
@@ -754,3 +777,4 @@
     buildEverything();
   }
 })();
+

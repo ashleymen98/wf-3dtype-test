@@ -1,10 +1,12 @@
-type="module">
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { FontLoader } from "three/addons/loaders/FontLoader.js";
-import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
-import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+// wf-3dtype-core.js
+// IMPORTANT: this file is a module. Load with <script type="module" src="..."></script>
+
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import { FontLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/FontLoader.js";
+import { LineSegments2 } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/lines/LineMaterial.js";
 
 const gsap = window.gsap;
 
@@ -207,12 +209,9 @@ const params = (window.params ||= {
   faceGradAnimOn: true,
   faceGradSpeed: 0.035,
   faceGradAngle: 25,
-
   sideGradAnimOn: true,
   sideGradSpeed: 0.035,
   sideGradAngle: 25,
-  
-  
 
   // Per-character Z
   charZOffsets: [],

@@ -13,10 +13,9 @@ const gsap = window.gsap;
 // ---------------------------
 // Version stamp (helps detect cache)
 // ---------------------------
-const CORE_VERSION = "core_v10_spin+explode+cylinder";
+const CORE_VERSION = "core_v10_spin+explode+cylinder (keeps bg+faceChecker+repel+heat)";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
-
 
 // ---------------------------
 // Single-instance lifecycle
@@ -56,7 +55,7 @@ const FONT_PRESETS = {
 window.FONT_PRESETS = FONT_PRESETS;
 
 // ---------------------------
-// Params
+// Params (base)
 // ---------------------------
 const params = (window.params ||= {
   aspect: "free",
@@ -138,7 +137,7 @@ const params = (window.params ||= {
   lightingMode: "accurate",
   cameraPreset: "front",
 
-  // GSAP animation
+  // GSAP animation (existing)
   animPreset: "depth",
   animSpeed: 1.2,
   animStagger: 0.03,
@@ -153,27 +152,14 @@ const params = (window.params ||= {
   animAlsoDepth: true,
   animAxis: "y",
 
-    // NEW: Spin preset
-  animSpinAxis: "y",          // x | y | z | random
-  animSpinDeg: 180,
+  // NEW animation controls
+  animSpinDeg: 360,
+  animExplodeAmount: 220,
+  animExplodeTwistDeg: 45,
+  animCylinderRadius: 260,
+  animCylinderArcDeg: 240, // spread across this many degrees
 
-  // NEW: Explode preset
-  animExplodeDist: 120,
-  animExplodeDistRand: 0.35,  // 0..1
-  animExplodeDir: "radial",   // radial | swirl | up | random
-  animExplodeZ: 0,            // optional Z push
-  animExplodeRotDeg: 140,
-  animExplodeRotRand: 0.5,    // 0..1
-  animExplodeAxis: "random",  // x | y | z | random
-
-  // NEW: Cylinder preset
-  cylRadius: 240,
-  cylArcDeg: 220,
-  cylLineOffsetDeg: 14,
-  cylFace: "out",             // out | in | none
-  cylTiltDeg: 0,
-
-  // Hover
+  // Hover (existing)
   hoverMode: "lift",
   proximityLift: true,
   proximityRadiusWorld: 140,
@@ -185,17 +171,10 @@ const params = (window.params ||= {
   hoverTiltDeg: 18,
   hoverPulse: 0.12,
 
-    // NEW: Hover spin / explode
-  hoverSpinAxis: "random",     // x | y | z | random
-  hoverSpinDeg: 35,
-
-  hoverExplodeAmount: 90,
-  hoverExplodeRand: 0.35,
-  hoverExplodeRotateDeg: 120,
-  hoverExplodeAxis: "random",  // x | y | z | random
-  hoverExplodeClamp: 220,
-  hoverExplodeZ: 0,
-
+  // NEW hover controls
+  hoverSpinDeg: 120,
+  hoverExplodeAmount: 120,
+  hoverExplodeTwistDeg: 35,
 
   // Repel
   repelAmount: 80,
@@ -253,53 +232,24 @@ const params = (window.params ||= {
   sideGradSpeed: 0.035,
   sideGradAngle: 25,
 
-  
-
-
   // Per-character Z
   charZOffsets: [],
 });
 
+// Patch defaults EVEN if params existed already
+function ensureParam(key, val) {
+  if (!(key in params)) params[key] = val;
+}
+ensureParam("animSpinDeg", 360);
+ensureParam("animExplodeAmount", 220);
+ensureParam("animExplodeTwistDeg", 45);
+ensureParam("animCylinderRadius", 260);
+ensureParam("animCylinderArcDeg", 240);
+ensureParam("hoverSpinDeg", 120);
+ensureParam("hoverExplodeAmount", 120);
+ensureParam("hoverExplodeTwistDeg", 35);
+
 window.params = params;
-
-// ---------------------------
-// NEW: Ensure new params exist even if window.params already existed
-// ---------------------------
-(function ensureNewParams(){
-  const p = params;
-  const ensure = (k,v)=>{ if(!(k in p)) p[k]=v; };
-
-  // Anim presets + controls
-  ensure("animPreset", "depth");
-  ensure("animSpinAxis","y");
-  ensure("animSpinDeg",180);
-
-  ensure("animExplodeDist",120);
-  ensure("animExplodeDistRand",0.35);
-  ensure("animExplodeDir","radial");
-  ensure("animExplodeZ",0);
-  ensure("animExplodeRotDeg",140);
-  ensure("animExplodeRotRand",0.5);
-  ensure("animExplodeAxis","random");
-
-  // Cylinder
-  ensure("cylRadius",240);
-  ensure("cylArcDeg",220);
-  ensure("cylLineOffsetDeg",14);
-  ensure("cylFace","out");
-  ensure("cylTiltDeg",0);
-
-  // Hover modes + controls
-  ensure("hoverSpinAxis","random");
-  ensure("hoverSpinDeg",35);
-
-  ensure("hoverExplodeAmount",90);
-  ensure("hoverExplodeRand",0.35);
-  ensure("hoverExplodeRotateDeg",120);
-  ensure("hoverExplodeAxis","random");
-  ensure("hoverExplodeClamp",220);
-  ensure("hoverExplodeZ",0);
-})();
 
 // ---------------------------
 // Utils
@@ -325,6 +275,11 @@ const fixStops = (a,b,c)=>{
   if(c-b<eps) c=Math.min(1,b+eps);
   return {a,b,c};
 };
+function hash01(n){
+  // stable 0..1 hash from integer
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
 
 // ---------------------------
 // Three core
@@ -534,7 +489,7 @@ function rebuildBackground(){
 window.rebuildBackground = rebuildBackground;
 
 // ---------------------------
-// NEW: Face checker texture
+// Face checker texture
 // ---------------------------
 function makeFaceCheckerTexture(){
   const size = 1024;
@@ -903,7 +858,7 @@ function resize(){
 window.resize = resize;
 
 // ---------------------------
-// Materials (with face checker)
+// Materials
 // ---------------------------
 function rebuildFillMaterials(){
   for(const m of _fxMats){ try{ m.userData._fxUniforms=null; }catch(e){} }
@@ -1216,6 +1171,7 @@ function applyExtrusionTransform(entry){
     entry.stroke.scale.z=entry.mesh.scale.z;
   }
 }
+
 function _updateDepth(entry){
   const breath = entry._breathMul ?? 1;
   const zoff = entry.zOffset ?? 0;
@@ -1223,9 +1179,7 @@ function _updateDepth(entry){
   entry.mesh.scale.z = Math.max(0.0001, (entry.depthF ?? 1) * breath);
   applyExtrusionTransform(entry);
 
-  const animZ = entry.animZ ?? 0;
-  const hoverZ = entry.hoverZ ?? 0;
-  entry.group.position.z = (entry.baseGroupZ ?? 0) + zoff + animZ + hoverZ;
+  entry.group.position.z = (entry.baseGroupZ ?? 0) + zoff + (entry.animOffsetZ || 0);
 }
 
 function _ensureCharZOffsets(){
@@ -1254,6 +1208,26 @@ const getAlign=()=>{
   const a=(params.align||"center").toLowerCase();
   return (a==="left"||a==="right"||a==="center")?a:"center";
 };
+
+function _computeCylinderTargets(){
+  const n = glyphs.length;
+  if(!n) return;
+  const arc = THREE.MathUtils.degToRad(Number(params.animCylinderArcDeg ?? 240));
+  const radius = Math.max(10, Number(params.animCylinderRadius ?? 260));
+  const start = -arc/2;
+
+  for(let i=0;i<n;i++){
+    const t = (n===1) ? 0.5 : (i/(n-1));
+    const theta = start + t*arc;
+
+    // cylinder around Y axis
+    const tx = Math.sin(theta) * radius;
+    const tz = (1 - Math.cos(theta)) * radius; // keeps "front" near z=0, bulges forward
+    glyphs[i]._cylTheta = theta;
+    glyphs[i]._cylTargetX = tx;
+    glyphs[i]._cylTargetZ = tz;
+  }
+}
 
 function buildText(){
   if(!font) return;
@@ -1323,6 +1297,14 @@ function buildText(){
 
       textGroup.add(group);
 
+      const idx = globalGlyphIndex;
+
+      // stable random direction per glyph (for explode presets / hover)
+      const a = hash01(idx+17) * Math.PI*2;
+      const mag = 0.6 + 0.4*hash01(idx+91);
+      const rx = Math.cos(a) * mag;
+      const ry = Math.sin(a) * mag;
+
       const entry={
         group, inner, mesh, stroke,
         baseDepth: params.depth,
@@ -1337,17 +1319,20 @@ function buildText(){
         zOffset: 0,
         lineIndex: lineIdx,
         hoverF: 0,
-        overlayIndex: globalGlyphIndex,
+        overlayIndex: idx,
 
-                // NEW: stable seed + animation offsets
-        _seed: globalGlyphIndex + 1,
-        animX: 0, animY: 0, animZ: 0,
-        animRX: 0, animRY: 0, animRZ: 0,
-        animS: 1,
-        hoverZ: 0,
-        _lineMinX: 0,
-        _lineMaxX: 0,
+        // animation offsets (so hover can incorporate them cleanly)
+        animOffsetX: 0,
+        animOffsetY: 0,
+        animOffsetZ: 0,
+        animRotX: 0,
+        animRotY: 0,
+        animRotZ: 0,
+        animScale: 1,
 
+        // explode direction
+        _rndX: rx,
+        _rndY: ry,
       };
 
       _updateDepth(entry);
@@ -1386,24 +1371,11 @@ function buildText(){
 
   applyWorldUVsNonIndexed(meshes, params.depth, faceWorld, sideWorld);
 
-    // NEW: per-line bounds for cylinder mapping
-  const boundsByLine = new Map();
-  for(const g of glyphs){
-    const i = g.lineIndex || 0;
-    const b = boundsByLine.get(i) || {min: Infinity, max: -Infinity};
-    b.min = Math.min(b.min, g.baseGroupX || 0);
-    b.max = Math.max(b.max, g.baseGroupX || 0);
-    boundsByLine.set(i, b);
-  }
-  for(const g of glyphs){
-    const b = boundsByLine.get(g.lineIndex || 0) || {min:0,max:0};
-    g._lineMinX = b.min;
-    g._lineMaxX = b.max;
-  }
-
-
   textGroup.updateMatrixWorld(true);
   _refreshStablePlane();
+
+  // precompute cylinder targets after centering
+  _computeCylinderTargets();
 
   resize();
   reframeToText();
@@ -1480,32 +1452,21 @@ window.applyCameraPreset = applyCameraPreset;
 window.reframeToText = reframeToText;
 
 // ---------------------------
-// GSAP Preset Animation (unchanged)
-// ---------------------------
-// ---------------------------
-// GSAP Preset Animation (UPDATED: spin/explode/cylinder)
+// GSAP Preset Animation (EXTENDED)
 // ---------------------------
 function stopAnimation(){
   if(tl){ tl.kill(); tl=null; }
-
-  // Reset anim offsets
   for(const g of glyphs){
-    g.depthF = 1;
+    g.depthF=1;
 
-    g.animX = 0; g.animY = 0; g.animZ = 0;
-    g.animRX = 0; g.animRY = 0; g.animRZ = 0;
-    g.animS = 1;
+    g.animOffsetX = 0; g.animOffsetY = 0; g.animOffsetZ = 0;
+    g.animRotX = 0; g.animRotY = 0; g.animRotZ = 0;
+    g.animScale = 1;
 
-    g.hoverZ = 0;
-
-    g.group.position.x = (g.baseGroupX||0);
-    g.group.position.y = (g.baseGroupY||0);
-
-    g.group.rotation.x = (g.baseRotX||0);
-    g.group.rotation.y = (g.baseRotY||0);
-    g.group.rotation.z = (g.baseRotZ||0);
-
-    g.group.scale.set((g.baseScaleX||1),(g.baseScaleY||1),(g.baseScaleZ||1));
+    g.group.rotation.x=g.baseRotX||0;
+    g.group.rotation.y=g.baseRotY||0;
+    g.group.rotation.z=g.baseRotZ||0;
+    g.group.scale.set(g.baseScaleX||1,g.baseScaleY||1,g.baseScaleZ||1);
 
     _updateDepth(g);
   }
@@ -1513,300 +1474,162 @@ function stopAnimation(){
 }
 window.stopAnimation = stopAnimation;
 
-// deterministic helpers
-function _hash01(n){
-  const x = Math.sin(n*127.1 + 311.7) * 43758.5453123;
-  return x - Math.floor(x);
-}
-function _hashSigned(n){ return _hash01(n)*2 - 1; }
-
 function playAnimation(){
   if(!gsap || !glyphs.length) return;
   if(tl){ tl.kill(); tl=null; }
 
-  const duration = Math.max(0.05, Number(params.animSpeed||1.2));
-  const stagger  = Math.max(0, Number(params.animStagger||0.03));
-  const ease     = params.animEase || "power2.inOut";
-  const loop     = !!params.animLoop;
+  const duration=Number(params.animSpeed||1.2);
+  const stagger=Number(params.animStagger||.03);
+  const ease=params.animEase||"power2.inOut";
+  const loop=!!params.animLoop;
+  const minF=Math.max(0,Number(params.animMinPct||0)/100);
+  const maxF=Math.max(0,Number(params.animMaxPct||100)/100);
 
-  const minF = Math.max(0, Number(params.animMinPct||0)/100);
-  const maxF = Math.max(0, Number(params.animMaxPct||100)/100);
-
-  // grouping (same as before)
   let groups=[];
   if(params.animStaggerMode==="word") groups=wordGroups;
   else if(params.animStaggerMode==="line") groups=lineGroups;
   else groups=glyphs.map(g=>[g]);
 
-  const proxies = groups
-    .filter(g=>g && g.length)
-    .map((members, idx)=>({
-      members,
-      idx,
-      // animated channels
-      f: minF,
-      rx: 0, ry: 0, rz: 0,
-      s: 1,
-      tx: 0, ty: 0, tz: 0,
-    }));
+  const proxies=groups.filter(g=>g&&g.length).map(members=>({
+    f:minF, rx:0, ry:0, rz:0, s:1,
+    ex:0, cyl:0,
+    members
+  }));
 
-  const deg = d => THREE.MathUtils.degToRad(Number(d||0));
+  const rotRad=THREE.MathUtils.degToRad(Number(params.animRotateDeg||35));
+  const inflateAmt=Number(params.animInflate||.18);
 
-  function proxyCenter(p){
-    let cx=0, cy=0;
-    for(const m of p.members){ cx += (m.baseGroupX||0); cy += (m.baseGroupY||0); }
-    const inv = 1/Math.max(1,p.members.length);
-    return {x:cx*inv, y:cy*inv};
-  }
+  const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
+  const explodeAmt = Number(params.animExplodeAmount ?? 220);
+  const explodeTwist = THREE.MathUtils.degToRad(Number(params.animExplodeTwistDeg ?? 45));
 
-  function setAnimToMembers(p){
+  function applyProxy(p){
     for(const m of p.members){
+      // base
+      const bx = (m.baseGroupX||0);
+      const by = (m.baseGroupY||0);
+
+      // reset per-proxy anim offsets
+      let ox=0, oy=0, oz=0;
+      let arx=0, ary=0, arz=0;
+      let asc=1;
+
+      // explode field
+      if(p.ex && p.ex !== 0){
+        ox += (m._rndX||0) * explodeAmt * p.ex;
+        oy += (m._rndY||0) * explodeAmt * p.ex;
+        arz += (m._rndX||0) * explodeTwist * p.ex;
+      }
+
+      // cylinder field
+      if(p.cyl && p.cyl !== 0){
+        const tx = (m._cylTargetX ?? bx);
+        const tz = (m._cylTargetZ ?? 0);
+        ox += (tx - bx) * p.cyl;
+        oz += (tz - 0)  * p.cyl;
+        ary += (m._cylTheta ?? 0) * p.cyl;
+      }
+
+      // spin/twist/etc (rotations)
+      arx += (p.rx||0);
+      ary += (p.ry||0);
+      arz += (p.rz||0);
+
+      // inflate
+      asc *= (p.s||1);
+
+      // write anim channels for hover to incorporate
+      m.animOffsetX = ox;
+      m.animOffsetY = oy;
+      m.animOffsetZ = oz;
+      m.animRotX = arx;
+      m.animRotY = ary;
+      m.animRotZ = arz;
+      m.animScale = asc;
+
+      // apply transforms (positions are handled by hover system each frame, but we
+      // bake base rotation/scale here so it stays stable even if hover is off)
+      m.group.rotation.x=(m.baseRotX||0) + m.animRotX;
+      m.group.rotation.y=(m.baseRotY||0) + m.animRotY;
+      m.group.rotation.z=(m.baseRotZ||0) + m.animRotZ;
+
+      const bsx=(m.baseScaleX||1), bsy=(m.baseScaleY||1), bsz=(m.baseScaleZ||1);
+      m.group.scale.set(bsx*m.animScale, bsy*m.animScale, bsz);
+
+      // depth
       m.depthF = (typeof p.f==="number") ? p.f : 1;
-
-      m.animRX = p.rx || 0;
-      m.animRY = p.ry || 0;
-      m.animRZ = p.rz || 0;
-      m.animS  = (typeof p.s==="number") ? p.s : 1;
-
-      m.animX = p.tx || 0;
-      m.animY = p.ty || 0;
-      m.animZ = p.tz || 0;
-
-      // Z is applied inside _updateDepth
       _updateDepth(m);
     }
   }
 
-  // init apply
-  proxies.forEach(setAnimToMembers);
+  for(const p of proxies) applyProxy(p);
 
-  const preset = (params.animPreset||"depth").toLowerCase();
-  const alsoDepth = (preset==="depth") ? true : !!params.animAlsoDepth;
+  tl=gsap.timeline({repeat:loop?-1:0,yoyo:true});
+  const preset=(params.animPreset||"depth").toLowerCase();
+  const alsoDepth=(preset==="depth")?true:!!params.animAlsoDepth;
 
-  // NOTE: while anim is playing, we snap transforms so hover reset doesn’t “fight” GSAP
-  window.__tp_animPlaying = true;
-
-  // Build timeline
-  const yoyoDefault = (preset!=="cylinder"); // cylinder should spin continuously
-  tl = gsap.timeline({ repeat: loop ? -1 : 0, yoyo: yoyoDefault });
-
-  const tweenVars = {
-    duration,
-    ease,
-    stagger: { each: stagger, from: params.animStaggerFrom },
-    onUpdate: ()=>{
-      proxies.forEach(setAnimToMembers);
-      _applyCharZOffsetsFromParams();
-    },
-    onComplete: ()=>{
-      if(!loop) window.__tp_animPlaying = false;
-    }
+  const tweenVars={
+    duration, ease,
+    stagger:{each:stagger,from:params.animStaggerFrom},
+    onUpdate:()=>{ for(const p of proxies) applyProxy(p); _applyCharZOffsetsFromParams(); }
   };
 
-  // reset channels
   for(const p of proxies){
-    p.f = alsoDepth ? minF : undefined;
-    p.rx=0; p.ry=0; p.rz=0;
-    p.s=1;
-    p.tx=0; p.ty=0; p.tz=0;
+    p.f=alsoDepth?minF:undefined;
+    p.rx=0; p.ry=0; p.rz=0; p.s=1;
+    p.ex=0; p.cyl=0;
   }
+
+  const axis=(params.animAxis||"y").toLowerCase();
+  const depthTarget=maxF;
 
   if(preset==="depth"){
-    tl.to(proxies, { ...tweenVars, f: maxF }, 0);
-    return;
+    tl.to(proxies,{...tweenVars,f:depthTarget},0);
+
+  }else if(preset==="twist"){
+    const vars={...tweenVars};
+    if(axis==="x") vars.rx=rotRad; else vars.ry=rotRad;
+    if(alsoDepth) vars.f=depthTarget;
+    tl.to(proxies,vars,0);
+
+  }else if(preset==="wobble"){
+    const vars={...tweenVars,rz:rotRad};
+    if(alsoDepth) vars.f=depthTarget;
+    tl.to(proxies,vars,0);
+
+  }else if(preset==="inflate"){
+    const vars={...tweenVars,s:1+inflateAmt};
+    if(alsoDepth) vars.f=depthTarget;
+    tl.to(proxies,vars,0);
+
+  }else if(preset==="spin"){
+    const vars={...tweenVars};
+    if(axis==="x") vars.rx=spinRad;
+    else if(axis==="y") vars.ry=spinRad;
+    else vars.rz=spinRad;
+    if(alsoDepth) vars.f=depthTarget;
+    tl.to(proxies,vars,0);
+
+  }else if(preset==="explode"){
+    const vars={...tweenVars, ex:1};
+    if(alsoDepth) vars.f=depthTarget;
+    tl.to(proxies,vars,0);
+
+  }else if(preset==="cylinder"){
+    // rebuild targets in case radius/arc changed
+    _computeCylinderTargets();
+    const vars={...tweenVars, cyl:1};
+    if(alsoDepth) vars.f=depthTarget;
+    tl.to(proxies,vars,0);
+
+  }else{
+    tl.to(proxies,{...tweenVars,f:depthTarget},0);
   }
-
-  if(preset==="twist"){
-    const axis = (params.animAxis||"y").toLowerCase();
-    const rotRad = deg(params.animRotateDeg||35);
-    const vars = { ...tweenVars };
-    if(axis==="x") vars.rx = rotRad;
-    else vars.ry = rotRad;
-    if(alsoDepth) vars.f = maxF;
-    tl.to(proxies, vars, 0);
-    return;
-  }
-
-  if(preset==="wobble"){
-    const rotRad = deg(params.animRotateDeg||35);
-    const vars = { ...tweenVars, rz: rotRad };
-    if(alsoDepth) vars.f = maxF;
-    tl.to(proxies, vars, 0);
-    return;
-  }
-
-  if(preset==="inflate"){
-    const inflateAmt = Number(params.animInflate||0.18);
-    const vars = { ...tweenVars, s: 1 + inflateAmt };
-    if(alsoDepth) vars.f = maxF;
-    tl.to(proxies, vars, 0);
-    return;
-  }
-
-  if(preset==="spin"){
-    const axis = (params.animSpinAxis || params.animAxis || "y").toLowerCase();
-    const spinRad = deg(params.animSpinDeg ?? params.animRotateDeg ?? 180);
-
-    // For random axis we pick per proxy (stable)
-    for(const p of proxies){
-      const pick = axis==="random"
-        ? (["x","y","z"][Math.floor(_hash01(p.idx+33)*3)] || "y")
-        : axis;
-      p.__spinAxis = pick;
-    }
-
-    const vars = { ...tweenVars };
-    // we animate generic rz then map in onUpdate by assigning to rx/ry/rz.
-    // easiest: animate a temp "spin" scalar and remap
-    proxies.forEach(p=>p.__spin=0);
-
-    tl.to(proxies, {
-      ...tweenVars,
-      __spin: spinRad,
-      onUpdate: ()=>{
-        for(const p of proxies){
-          p.rx = 0; p.ry = 0; p.rz = 0;
-          const a = p.__spin || 0;
-          if(p.__spinAxis==="x") p.rx = a;
-          else if(p.__spinAxis==="z") p.rz = a;
-          else p.ry = a;
-          if(alsoDepth) p.f = maxF;
-        }
-        proxies.forEach(setAnimToMembers);
-        _applyCharZOffsetsFromParams();
-      }
-    }, 0);
-
-    return;
-  }
-
-  if(preset==="explode"){
-    const dist = Number(params.animExplodeDist||120);
-    const distRand = Math.max(0, Math.min(1, Number(params.animExplodeDistRand||0)));
-    const mode = (params.animExplodeDir||"radial").toLowerCase();
-    const zAmt = Number(params.animExplodeZ||0);
-
-    const rotDeg = Number(params.animExplodeRotDeg||140);
-    const rotRand = Math.max(0, Math.min(1, Number(params.animExplodeRotRand||0)));
-    const axis = (params.animExplodeAxis||"random").toLowerCase();
-
-    for(const p of proxies){
-      const c = proxyCenter(p);
-      let vx=0, vy=0;
-
-      if(mode==="up"){
-        vx = _hashSigned(p.idx+10) * 0.35;
-        vy = 1;
-      }else if(mode==="swirl"){
-        // tangential around origin
-        const dx=c.x, dy=c.y;
-        const len=Math.hypot(dx,dy) || 1;
-        vx = (-dy/len);
-        vy = ( dx/len);
-      }else if(mode==="random"){
-        const a = _hash01(p.idx+20) * Math.PI*2;
-        vx = Math.cos(a); vy = Math.sin(a);
-      }else{
-        // radial
-        const dx=c.x, dy=c.y;
-        const len=Math.hypot(dx,dy) || 1;
-        vx = dx/len; vy = dy/len;
-      }
-
-      const mag = dist * (1 + _hashSigned(p.idx+40) * distRand);
-      p.tx = vx * mag;
-      p.ty = vy * mag;
-      p.tz = zAmt * (1 + _hashSigned(p.idx+41) * distRand);
-
-      // rotation
-      const r = deg(rotDeg) * (1 + _hashSigned(p.idx+50) * rotRand);
-      const pick = axis==="random"
-        ? (["x","y","z"][Math.floor(_hash01(p.idx+51)*3)] || "y")
-        : axis;
-
-      p.rx=0; p.ry=0; p.rz=0;
-      if(pick==="x") p.rx = r;
-      else if(pick==="z") p.rz = r;
-      else p.ry = r;
-
-      if(alsoDepth) p.f = maxF;
-    }
-
-    tl.to(proxies, { ...tweenVars, tx: (i)=>proxies[i].tx, ty: (i)=>proxies[i].ty, tz: (i)=>proxies[i].tz,
-                     rx: (i)=>proxies[i].rx, ry: (i)=>proxies[i].ry, rz: (i)=>proxies[i].rz,
-                     f: alsoDepth ? maxF : undefined }, 0);
-    return;
-  }
-
-  if(preset==="cylinder"){
-    const state = { phase: 0 };
-    const dir = 1; // could expose later
-    const spin = Math.PI*2*dir;
-
-    function applyCylinder(phase){
-      const radius = Number(params.cylRadius||240);
-      const arc = deg(params.cylArcDeg||220);
-      const lineOff = deg(params.cylLineOffsetDeg||14);
-      const face = (params.cylFace||"out").toLowerCase(); // out|in|none
-      const tilt = deg(params.cylTiltDeg||0);
-
-      for(const g of glyphs){
-        const minX = g._lineMinX ?? 0;
-        const maxX = g._lineMaxX ?? 0;
-        const denom = Math.max(1e-6, (maxX - minX));
-        const t = ((g.baseGroupX||0) - minX) / denom; // 0..1 across the line
-
-        const ang = (t - 0.5) * arc + phase + (g.lineIndex||0)*lineOff;
-
-        const x = Math.sin(ang) * radius;
-        const z = Math.cos(ang) * radius;
-
-        g.animX = x - (g.baseGroupX||0);
-        g.animY = 0;
-        g.animZ = z - (g.baseGroupZ||0);
-
-        g.animRX = tilt;
-        g.animRZ = 0;
-
-        if(face==="none"){
-          g.animRY = 0;
-        }else if(face==="in"){
-          g.animRY = ang - Math.PI/2;
-        }else{
-          g.animRY = ang + Math.PI/2;
-        }
-
-        if(alsoDepth) g.depthF = maxF;
-        _updateDepth(g);
-      }
-    }
-
-    // continuous, no yoyo
-    tl = gsap.timeline({ repeat: loop ? -1 : 0, yoyo: false });
-    tl.to(state, {
-      phase: spin,
-      duration,
-      ease: "none",
-      onUpdate: ()=>{
-        applyCylinder(state.phase);
-        _applyCharZOffsetsFromParams();
-      },
-      onComplete: ()=>{
-        if(!loop) window.__tp_animPlaying = false;
-      }
-    }, 0);
-
-    return;
-  }
-
-  // fallback
-  tl.to(proxies, { ...tweenVars, f: maxF }, 0);
 }
 window.playAnimation = playAnimation;
 
-
 // ---------------------------
-// Hover (repel fixed) + heat world position
+// Hover (EXTENDED: spin + explode)
 // ---------------------------
 let pointerActive=false;
 let pointerNDC=new THREE.Vector2(0,0);
@@ -1838,39 +1661,34 @@ function getCursorLocalOnTextPlane(outLocal){
 }
 
 function resetHoverTransforms(){
-  const animSnap = !!window.__tp_animPlaying;
-  const chase = animSnap ? 1 : clamp(Number(params.liftSmoothing||.18),.001,1);
-
+  const chase=clamp(Number(params.liftSmoothing||.18),.001,1);
   for(const g of glyphs){
-    const bx = (g.baseGroupX||0) + (g.animX||0);
-    const by = (g.baseGroupY||0) + (g.animY||0);
+    const bx = (g.baseGroupX||0) + (g.animOffsetX||0);
+    const by = (g.baseGroupY||0) + (g.animOffsetY||0);
 
-    const brx = (g.baseRotX||0) + (g.animRX||0);
-    const bry = (g.baseRotY||0) + (g.animRY||0);
-    const brz = (g.baseRotZ||0) + (g.animRZ||0);
+    g.group.position.x=lerp(g.group.position.x, bx, chase);
+    g.group.position.y=lerp(g.group.position.y, by, chase);
 
-    const bs = (typeof g.animS==="number") ? g.animS : 1;
-    const bsx = (g.baseScaleX||1) * bs;
-    const bsy = (g.baseScaleY||1) * bs;
-    const bsz = (g.baseScaleZ||1); // keep Z scale stable like before
+    const brx=(g.baseRotX||0) + (g.animRotX||0);
+    const bry=(g.baseRotY||0) + (g.animRotY||0);
+    const brz=(g.baseRotZ||0) + (g.animRotZ||0);
 
-    g.group.position.x = lerp(g.group.position.x, bx, chase);
-    g.group.position.y = lerp(g.group.position.y, by, chase);
+    g.group.rotation.x=lerp(g.group.rotation.x, brx, chase);
+    g.group.rotation.y=lerp(g.group.rotation.y, bry, chase);
+    g.group.rotation.z=lerp(g.group.rotation.z, brz, chase);
 
-    g.group.rotation.x = lerp(g.group.rotation.x, brx, chase);
-    g.group.rotation.y = lerp(g.group.rotation.y, bry, chase);
-    g.group.rotation.z = lerp(g.group.rotation.z, brz, chase);
+    const bsx=(g.baseScaleX||1) * (g.animScale||1);
+    const bsy=(g.baseScaleY||1) * (g.animScale||1);
+    const bsz=(g.baseScaleZ||1);
 
-    g.group.scale.x = lerp(g.group.scale.x, bsx, chase);
-    g.group.scale.y = lerp(g.group.scale.y, bsy, chase);
-    g.group.scale.z = lerp(g.group.scale.z, bsz, chase);
-
-    g.hoverZ = 0;
+    g.group.scale.x=lerp(g.group.scale.x, bsx, chase);
+    g.group.scale.y=lerp(g.group.scale.y, bsy, chase);
+    g.group.scale.z=lerp(g.group.scale.z, bsz, chase);
   }
 }
 
 function updateHoverEffects(){
-  if(!glyphs.length || params.hoverMode==="none"){ resetHoverTransforms(); _hoverStrength=0; return; }
+  if(!glyphs.length || (params.hoverMode||"none")==="none"){ resetHoverTransforms(); _hoverStrength=0; return; }
   if(!params.proximityLift){ resetHoverTransforms(); _hoverStrength=0; return; }
   if(!pointerActive){ resetHoverTransforms(); _hoverStrength=0; return; }
 
@@ -1890,13 +1708,10 @@ function updateHoverEffects(){
 
   const r=Math.max(1e-6,Number(params.proximityRadiusWorld||140));
   const invR=1/r;
-
-  const animSnap = !!window.__tp_animPlaying;
-  const chase = animSnap ? 1 : clamp(Number(params.liftSmoothing||.18),.001,1);
-
+  const chase=clamp(Number(params.liftSmoothing||.18),.001,1);
   const mode=params.proximityFalloff||"smooth";
   const lift=Number(params.proximityLiftAmount||60);
-  const rotZ=THREE.MathUtils.degToRad(Number(params.hoverRotateDeg||20));
+  const rot=THREE.MathUtils.degToRad(Number(params.hoverRotateDeg||20));
   const tilt=THREE.MathUtils.degToRad(Number(params.hoverTiltDeg||18));
   const pulse=Number(params.hoverPulse||.12);
   const hoverMode=(params.hoverMode||"lift").toLowerCase();
@@ -1906,13 +1721,15 @@ function updateHoverEffects(){
   const sweepBias=Number(params.sweepBias||1);
   const sweepYMix=Number(params.sweepYMix||0.25);
 
+  const spinRad = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg ?? 120));
+  const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
+  const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
+
   let maxF=0;
 
   for(const g of glyphs){
-    const cx = (g.baseGroupX||0) + (g.animX||0);
-    const cy = (g.baseGroupY||0) + (g.animY||0);
-
-    const dx=cursorLocal.x-cx, dy=cursorLocal.y-cy;
+    const c={x:(g.baseX||0),y:(g.baseGroupY||0)};
+    const dx=cursorLocal.x-c.x, dy=cursorLocal.y-c.y;
     const d=Math.sqrt(dx*dx+dy*dy);
     const u=d<r?(1-d*invR):0;
     g.hoverF=falloff(u,mode);
@@ -1923,31 +1740,30 @@ function updateHoverEffects(){
   for(const g of glyphs){
     const f=g.hoverF||0;
 
-    const bx = (g.baseGroupX||0) + (g.animX||0);
-    const by = (g.baseGroupY||0) + (g.animY||0);
+    const bx = (g.baseGroupX||0) + (g.animOffsetX||0);
+    const by = (g.baseGroupY||0) + (g.animOffsetY||0);
 
-    const baseRX = (g.baseRotX||0) + (g.animRX||0);
-    const baseRY = (g.baseRotY||0) + (g.animRY||0);
-    const baseRZ = (g.baseRotZ||0) + (g.animRZ||0);
+    const brx=(g.baseRotX||0) + (g.animRotX||0);
+    const bry=(g.baseRotY||0) + (g.animRotY||0);
+    const brz=(g.baseRotZ||0) + (g.animRotZ||0);
 
-    const bs = (typeof g.animS==="number") ? g.animS : 1;
-    let sx=(g.baseScaleX||1) * bs;
-    let sy=(g.baseScaleY||1) * bs;
-    let sz=(g.baseScaleZ||1);
+    const bsx=(g.baseScaleX||1) * (g.animScale||1);
+    const bsy=(g.baseScaleY||1) * (g.animScale||1);
+    const bsz=(g.baseScaleZ||1);
 
-    const dx=cursorLocal.x-bx, dy=cursorLocal.y-by;
+    const c={x:(g.baseX||0),y:(g.baseGroupY||0)};
+    const dx=cursorLocal.x-c.x, dy=cursorLocal.y-c.y;
     const d=Math.sqrt(dx*dx+dy*dy)||1;
 
     let tx=bx, ty=by;
-    let rx=baseRX, ry=baseRY, rz=baseRZ;
-
-    g.hoverZ = 0;
+    let rx=brx, ry=bry, rz=brz;
+    let sx=bsx, sy=bsy, sz=bsz;
 
     if(hoverMode==="lift"){
       ty += lift*f;
 
     }else if(hoverMode==="rotate"){
-      rz += rotZ*f;
+      rz += rot*f;
 
     }else if(hoverMode==="tilt"){
       const nx=dx/d, ny=dy/d;
@@ -1964,6 +1780,7 @@ function updateHoverEffects(){
       const cap =Number(params.repelClamp ?? 140);
       const dd=Math.max(d,minD);
 
+      // push AWAY from cursor
       const nx = (-dx)/dd;
       const ny = (-dy)/dd;
 
@@ -1974,48 +1791,19 @@ function updateHoverEffects(){
       ty += ny*push;
 
     }else if(hoverMode==="spin"){
-      const axis = (params.hoverSpinAxis||"random").toLowerCase();
-      const a = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg||35)) * f;
-
-      const pick = axis==="random"
-        ? (["x","y","z"][Math.floor(_hash01((g._seed||1)+99)*3)] || "y")
-        : axis;
-
-      if(pick==="x") rx += a;
-      else if(pick==="z") rz += a;
-      else ry += a;
+      // simple "spin-up" around Z + slight pulse
+      rz += spinRad * f;
+      const s = 1 + (pulse*0.6)*f;
+      sx*=s; sy*=s;
 
     }else if(hoverMode==="explode"){
-      const minD=Math.max(0.001,Number(params.repelMinDistance ?? 6));
-      const amt =Number(params.hoverExplodeAmount ?? 90);
-      const cap =Number(params.hoverExplodeClamp ?? 220);
-      const rand = Math.max(0, Math.min(1, Number(params.hoverExplodeRand ?? 0.35)));
-
-      const dd=Math.max(d,minD);
-
-      const nx = (-dx)/dd;
-      const ny = (-dy)/dd;
-
-      let push = amt*f*(1 + _hashSigned((g._seed||1)+123)*rand);
-      if(push>cap) push=cap;
-
-      tx += nx*push;
-      ty += ny*push;
-
-      const z = Number(params.hoverExplodeZ||0);
-      g.hoverZ = z * f;
-
-      const axis = (params.hoverExplodeAxis||"random").toLowerCase();
-      const rdeg = Number(params.hoverExplodeRotateDeg||120);
-      const rr = THREE.MathUtils.degToRad(rdeg) * f * (1 + _hashSigned((g._seed||1)+321)*rand);
-
-      const pick = axis==="random"
-        ? (["x","y","z"][Math.floor(_hash01((g._seed||1)+222)*3)] || "y")
-        : axis;
-
-      if(pick==="x") rx += rr;
-      else if(pick==="z") rz += rr;
-      else ry += rr;
+      // burst outward using per-glyph stable random direction
+      tx += (g._rndX||0) * explodeAmt * f;
+      ty += (g._rndY||0) * explodeAmt * f;
+      rz += (g._rndX||0) * explodeTwist * f;
+      const s = 1 + (pulse*0.9)*f;
+      sx*=s; sy*=s;
+      ty += lift*0.25*f;
     }
 
     if(sweepOn && sweepAmt>0.0001){
@@ -2041,7 +1829,6 @@ function updateHoverEffects(){
   }
 }
 window.updateHoverEffects = updateHoverEffects;
-
 
 // ---------------------------
 // Idle wave + breathing
@@ -2135,4 +1922,3 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
-

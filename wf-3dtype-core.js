@@ -13,7 +13,7 @@ const gsap = window.gsap;
 // ---------------------------
 // Version stamp (helps detect cache)
 // ---------------------------
-const CORE_VERSION = "core_v11_hoverAxis + trueCylinderLines (keeps bg+faceChecker+repel+heat)";
+const CORE_VERSION = "core_v11_removeCylinder + hoverSpinAxis+randomize (keeps bg+faceChecker+repel+heat)";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
 
@@ -137,7 +137,7 @@ const params = (window.params ||= {
   lightingMode: "accurate",
   cameraPreset: "front",
 
-  // GSAP animation (existing)
+  // GSAP animation
   animPreset: "depth",
   animSpeed: 1.2,
   animStagger: 0.03,
@@ -152,23 +152,11 @@ const params = (window.params ||= {
   animAlsoDepth: true,
   animAxis: "y",
 
-  // New Cylinder preset (per-line rings)
-  cylDiameter: 520,
-  cylDiameterStep: 80,
-  cylSpeed: 0.12,
-  cylSpeedStep: 0.03,
-  cylPhase: 0.0,
-  cylArc: 1.0,
-  cylFaceInward: true,
-
-  // Existing preset tuners (spin/explode + legacy cylinder morph)
   animSpinDeg: 360,
   animExplodeAmount: 220,
   animExplodeTwistDeg: 45,
-  animCylinderRadius: 260,
-  animCylinderArcDeg: 240, // spread across this many degrees
 
-  // Hover (existing)
+  // Hover
   hoverMode: "lift",
   proximityLift: true,
   proximityRadiusWorld: 140,
@@ -180,11 +168,13 @@ const params = (window.params ||= {
   hoverTiltDeg: 18,
   hoverPulse: 0.12,
 
-  hoverSpinDeg: 120,
+  // Hover spin upgrades
+  hoverSpinAxis: "z",           // x | y | z | random
+  hoverSpinDeg: 120,            // max degrees at f=1
+  hoverSpinRandomize: false,    // random per glyph direction + amount
+
   hoverExplodeAmount: 120,
   hoverExplodeTwistDeg: 35,
-
-  // NEW hover rotate axis
   hoverRotateAxis: "z", // x | y | z | random
 
   // Repel
@@ -254,22 +244,13 @@ function ensureParam(key, val) {
 ensureParam("animSpinDeg", 360);
 ensureParam("animExplodeAmount", 220);
 ensureParam("animExplodeTwistDeg", 45);
-ensureParam("animCylinderRadius", 260);
-ensureParam("animCylinderArcDeg", 240);
 
+ensureParam("hoverSpinAxis", "z");
 ensureParam("hoverSpinDeg", 120);
+ensureParam("hoverSpinRandomize", false);
+
 ensureParam("hoverExplodeAmount", 120);
 ensureParam("hoverExplodeTwistDeg", 35);
-ensureParam("hoverRotateAxis", "z");
-
-// Cylinder ring params
-ensureParam("cylDiameter", 520);
-ensureParam("cylDiameterStep", 80);
-ensureParam("cylSpeed", 0.12);
-ensureParam("cylSpeedStep", 0.03);
-ensureParam("cylPhase", 0.0);
-ensureParam("cylArc", 1.0);
-ensureParam("cylFaceInward", true);
 
 window.params = params;
 
@@ -1230,26 +1211,6 @@ const getAlign=()=>{
   return (a==="left"||a==="right"||a==="center")?a:"center";
 };
 
-// Legacy morph-cylinder targets (kept for your older GSAP cylinder morph)
-function _computeCylinderTargets(){
-  const n = glyphs.length;
-  if(!n) return;
-  const arc = THREE.MathUtils.degToRad(Number(params.animCylinderArcDeg ?? 240));
-  const radius = Math.max(10, Number(params.animCylinderRadius ?? 260));
-  const start = -arc/2;
-
-  for(let i=0;i<n;i++){
-    const t = (n===1) ? 0.5 : (i/(n-1));
-    const theta = start + t*arc;
-
-    const tx = Math.sin(theta) * radius;
-    const tz = (1 - Math.cos(theta)) * radius;
-    glyphs[i]._cylTheta = theta;
-    glyphs[i]._cylTargetX = tx;
-    glyphs[i]._cylTargetZ = tz;
-  }
-}
-
 function buildText(){
   if(!font) return;
 
@@ -1298,7 +1259,6 @@ function buildText(){
     if(align==="center") x=-lineEntry.width/2;
     if(align==="right")  x=(maxLineW/2)-lineEntry.width;
 
-    const lineStartX = x; // IMPORTANT for cylT
     const currentLineGroup=[];
     let currentWordGroup=[];
     const flushWord=()=>{ if(currentWordGroup.length){ wordGroups.push(currentWordGroup); currentWordGroup=[]; } };
@@ -1321,18 +1281,23 @@ function buildText(){
 
       const idx = globalGlyphIndex;
 
-      // stable random direction per glyph (for explode presets / hover)
+      // stable random direction per glyph (explode + spin randomize)
       const a = hash01(idx+17) * Math.PI*2;
       const mag = 0.6 + 0.4*hash01(idx+91);
       const rx = Math.cos(a) * mag;
       const ry = Math.sin(a) * mag;
 
+      // stable sign + amplitude for spin randomize
+      const sign = (hash01(idx+123) < 0.5) ? -1 : 1;
+      const amp  = 0.45 + 0.55*hash01(idx+321); // 0.45..1.0
+
+      // stable random axis pick
+      const uax = hash01(idx+777);
+      const axPick = (uax < 0.333) ? "x" : (uax < 0.666) ? "y" : "z";
+
       const entry={
         group, inner, mesh, stroke,
         baseDepth: params.depth,
-
-        // cylinder ring data (per line)
-        cylT: 0, // filled below
 
         baseGroupX: group.position.x,
         baseGroupY: group.position.y,
@@ -1340,7 +1305,6 @@ function buildText(){
         baseRotX: group.rotation.x, baseRotY: group.rotation.y, baseRotZ: group.rotation.z,
         baseScaleX: group.scale.x, baseScaleY: group.scale.y, baseScaleZ: group.scale.z,
         baseX: x,
-
         depthF: 1,
         _breathMul: 1,
         zOffset: 0,
@@ -1360,10 +1324,12 @@ function buildText(){
         // explode direction
         _rndX: rx,
         _rndY: ry,
-      };
 
-      // 0..1 position along this line (used by cylinder preset)
-      entry.cylT = (lineEntry.width > 0) ? clamp01((entry.baseX - lineStartX) / lineEntry.width) : 0;
+        // spin randomize
+        _rndSpinSign: sign,
+        _rndSpinAmp: amp,
+        _rndAxisPick: axPick,
+      };
 
       _updateDepth(entry);
 
@@ -1397,13 +1363,11 @@ function buildText(){
 
   const faceWorld = (params.faceMode!=="solid" && params.faceUVSpace==="world");
   const sideWorld = (params.sideMode==="gradient" && params.sideUVSpace==="world");
+
   applyWorldUVsNonIndexed(meshes, params.depth, faceWorld, sideWorld);
 
   textGroup.updateMatrixWorld(true);
   _refreshStablePlane();
-
-  // legacy morph targets (kept)
-  _computeCylinderTargets();
 
   resize();
   reframeToText();
@@ -1480,11 +1444,10 @@ window.applyCameraPreset = applyCameraPreset;
 window.reframeToText = reframeToText;
 
 // ---------------------------
-// GSAP Preset Animation (EXTENDED)
+// GSAP Preset Animation (spin + explode kept; cylinder removed)
 // ---------------------------
 function stopAnimation(){
   if(tl){ tl.kill(); tl=null; }
-
   for(const g of glyphs){
     g.depthF=1;
 
@@ -1492,15 +1455,9 @@ function stopAnimation(){
     g.animRotX = 0; g.animRotY = 0; g.animRotZ = 0;
     g.animScale = 1;
 
-    // Restore base positions (important after procedural cylinder)
-    g.group.position.x = (g.baseGroupX || 0);
-    g.group.position.y = (g.baseGroupY || 0);
-    g.group.position.z = (g.baseGroupZ || 0);
-
     g.group.rotation.x=g.baseRotX||0;
     g.group.rotation.y=g.baseRotY||0;
     g.group.rotation.z=g.baseRotZ||0;
-
     g.group.scale.set(g.baseScaleX||1,g.baseScaleY||1,g.baseScaleZ||1);
 
     _updateDepth(g);
@@ -1510,18 +1467,7 @@ function stopAnimation(){
 window.stopAnimation = stopAnimation;
 
 function playAnimation(){
-  if(!glyphs.length) return;
-
-  // NEW: procedural cylinder rings (no GSAP timeline needed)
-  const preset=(params.animPreset||"depth").toLowerCase();
-  if(preset === "cylinder"){
-    // make sure GSAP timeline is not fighting
-    if(tl){ tl.kill(); tl=null; }
-    // keep depth as-is; cylinder motion is applied in loop()
-    return;
-  }
-
-  if(!gsap) return;
+  if(!gsap || !glyphs.length) return;
   if(tl){ tl.kill(); tl=null; }
 
   const duration=Number(params.animSpeed||1.2);
@@ -1538,7 +1484,7 @@ function playAnimation(){
 
   const proxies=groups.filter(g=>g&&g.length).map(members=>({
     f:minF, rx:0, ry:0, rz:0, s:1,
-    ex:0, cyl:0,
+    ex:0,
     members
   }));
 
@@ -1551,9 +1497,6 @@ function playAnimation(){
 
   function applyProxy(p){
     for(const m of p.members){
-      const bx = (m.baseGroupX||0);
-      const by = (m.baseGroupY||0);
-
       let ox=0, oy=0, oz=0;
       let arx=0, ary=0, arz=0;
       let asc=1;
@@ -1562,15 +1505,6 @@ function playAnimation(){
         ox += (m._rndX||0) * explodeAmt * p.ex;
         oy += (m._rndY||0) * explodeAmt * p.ex;
         arz += (m._rndX||0) * explodeTwist * p.ex;
-      }
-
-      // legacy morph cylinder (kept)
-      if(p.cyl && p.cyl !== 0){
-        const tx = (m._cylTargetX ?? bx);
-        const tz = (m._cylTargetZ ?? 0);
-        ox += (tx - bx) * p.cyl;
-        oz += (tz - 0)  * p.cyl;
-        ary += (m._cylTheta ?? 0) * p.cyl;
       }
 
       arx += (p.rx||0);
@@ -1602,6 +1536,7 @@ function playAnimation(){
   for(const p of proxies) applyProxy(p);
 
   tl=gsap.timeline({repeat:loop?-1:0,yoyo:true});
+  const preset=(params.animPreset||"depth").toLowerCase();
   const alsoDepth=(preset==="depth")?true:!!params.animAlsoDepth;
 
   const tweenVars={
@@ -1613,7 +1548,7 @@ function playAnimation(){
   for(const p of proxies){
     p.f=alsoDepth?minF:undefined;
     p.rx=0; p.ry=0; p.rz=0; p.s=1;
-    p.ex=0; p.cyl=0;
+    p.ex=0;
   }
 
   const axis=(params.animAxis||"y").toLowerCase();
@@ -1658,7 +1593,7 @@ function playAnimation(){
 window.playAnimation = playAnimation;
 
 // ---------------------------
-// Hover (EXTENDED: spin + explode + rotate axis)
+// Hover (spin upgraded)
 // ---------------------------
 let pointerActive=false;
 let pointerNDC=new THREE.Vector2(0,0);
@@ -1717,16 +1652,15 @@ function resetHoverTransforms(){
 }
 
 function updateHoverEffects(){
-  // If procedural cylinder is playing, don't apply hover transforms.
-  if(window.__tp_animPlaying && (params.animPreset||"").toLowerCase() === "cylinder"){
-    resetHoverTransforms();
-    _hoverStrength = 0;
-    return;
+  if(!glyphs.length || (params.hoverMode||"none")==="none"){
+    resetHoverTransforms(); _hoverStrength=0; return;
   }
-
-  if(!glyphs.length || (params.hoverMode||"none")==="none"){ resetHoverTransforms(); _hoverStrength=0; return; }
-  if(!params.proximityLift){ resetHoverTransforms(); _hoverStrength=0; return; }
-  if(!pointerActive){ resetHoverTransforms(); _hoverStrength=0; return; }
+  if(!params.proximityLift){
+    resetHoverTransforms(); _hoverStrength=0; return;
+  }
+  if(!pointerActive){
+    resetHoverTransforms(); _hoverStrength=0; return;
+  }
 
   if(getCursorLocalOnTextPlane(cursorLocalTarget)){
     const ms=clamp(Number(params.cursorSmoothing||.85),0,.98);
@@ -1737,9 +1671,7 @@ function updateHoverEffects(){
     if(len>maxStep) _cursorDelta.multiplyScalar(maxStep/len);
     cursorLocal.addScaledVector(_cursorDelta,a);
   }else{
-    resetHoverTransforms();
-    _hoverStrength=0;
-    return;
+    resetHoverTransforms(); _hoverStrength=0; return;
   }
 
   const r=Math.max(1e-6,Number(params.proximityRadiusWorld||140));
@@ -1758,6 +1690,9 @@ function updateHoverEffects(){
   const sweepYMix=Number(params.sweepYMix||0.25);
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg ?? 120));
+  const spinAxisSetting = String(params.hoverSpinAxis || "z").toLowerCase();
+  const spinRandomize = !!params.hoverSpinRandomize;
+
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
 
@@ -1803,10 +1738,7 @@ function updateHoverEffects(){
       let pick = ax;
 
       if(pick === "random"){
-        // stable per glyph
-        const r = (Number(g.overlayIndex || 0) * 9301 + 49297) % 233280;
-        const u = r / 233280;
-        pick = (u < 0.333) ? "x" : (u < 0.666) ? "y" : "z";
+        pick = (g._rndAxisPick || "z");
       }
 
       if(pick === "x") rx += rot*f;
@@ -1838,7 +1770,17 @@ function updateHoverEffects(){
       ty += ny*push;
 
     }else if(hoverMode==="spin"){
-      rz += spinRad * f;
+      // axis selectable, optional stable random direction+amount per glyph
+      let ax = spinAxisSetting;
+      if(ax === "random") ax = (g._rndAxisPick || "z");
+
+      const mult = spinRandomize ? ((g._rndSpinSign||1) * (g._rndSpinAmp||1)) : 1;
+      const spin = spinRad * f * mult;
+
+      if(ax === "x") rx += spin;
+      else if(ax === "y") ry += spin;
+      else rz += spin;
+
       const s = 1 + (pulse*0.6)*f;
       sx*=s; sy*=s;
 
@@ -1874,53 +1816,6 @@ function updateHoverEffects(){
   }
 }
 window.updateHoverEffects = updateHoverEffects;
-
-// ---------------------------
-// Procedural Cylinder Motion (per-line rings)
-// ---------------------------
-function applyCylinderMotion(){
-  if(!glyphs.length) return;
-  if(!(window.__tp_animPlaying && (params.animPreset||"").toLowerCase() === "cylinder")) return;
-
-  const twoPi = Math.PI * 2;
-  const arc = clamp01(Number(params.cylArc ?? 1.0));
-  const faceIn = !!params.cylFaceInward;
-  const globalPhase = Number(params.cylPhase || 0) * twoPi;
-
-  for(const g of glyphs){
-    const lineIdx = Number(g.lineIndex || 0);
-
-    const diameter = Math.max(10, Number(params.cylDiameter || 520) + Number(params.cylDiameterStep || 0) * lineIdx);
-    const radius = diameter * 0.5;
-
-    const speed = Number(params.cylSpeed || 0.12) + Number(params.cylSpeedStep || 0) * lineIdx; // rotations/sec
-    const spin = (_fxTime * speed) * twoPi;
-
-    const t = clamp01(Number(g.cylT ?? 0)); // 0..1
-    const ang = (t * arc) * twoPi + spin + globalPhase;
-
-    // XZ ring, keep layout Y per line
-    g.group.position.x = Math.cos(ang) * radius;
-    g.group.position.z = Math.sin(ang) * radius;
-    g.group.position.y = (g.baseGroupY ?? g.group.position.y);
-
-    // keep depth offsets
-    _updateDepth(g);
-
-    if(faceIn){
-      g.group.rotation.y = (g.baseRotY || 0) + (-ang + Math.PI/2);
-      g.group.rotation.x = (g.baseRotX || 0);
-      g.group.rotation.z = (g.baseRotZ || 0);
-    }else{
-      g.group.rotation.x = (g.baseRotX || 0);
-      g.group.rotation.y = (g.baseRotY || 0);
-      g.group.rotation.z = (g.baseRotZ || 0);
-    }
-
-    // keep base scale
-    g.group.scale.set(g.baseScaleX||1, g.baseScaleY||1, g.baseScaleZ||1);
-  }
-}
 
 // ---------------------------
 // Idle wave + breathing
@@ -1987,7 +1882,6 @@ function loop(){
 
   updateHoverEffects();
   applyIdleMotion();
-  applyCylinderMotion(); // ✅ procedural cylinder lines
 
   _applyGradientAnimation();
   _syncFXUniforms();

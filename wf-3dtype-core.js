@@ -13,7 +13,8 @@ const gsap = window.gsap;
 // ---------------------------
 // Version stamp (helps detect cache)
 // ---------------------------
-const CORE_VERSION = "core_v11_removeCylinder + hoverSpinAxis+randomize (keeps bg+faceChecker+repel+heat)";
+const CORE_VERSION =
+  "core_v11_spin360+perLetterFace+noBgChecker+checkerWorldUV (keeps bg+faceChecker+repel+sweep+heat)";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
 
@@ -41,16 +42,26 @@ document.body.style.overflow = "hidden";
 // Fonts (presets)
 // ---------------------------
 const FONT_PRESETS = {
-  "Helvetiker Regular": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json",
-  "Helvetiker Bold":    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json",
-  "Optimer Regular":    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/optimer_regular.typeface.json",
-  "Optimer Bold":       "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/optimer_bold.typeface.json",
-  "Gentilis Regular":   "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/gentilis_regular.typeface.json",
-  "Gentilis Bold":      "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/gentilis_bold.typeface.json",
-  "Droid Sans Regular": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_sans_regular.typeface.json",
-  "Droid Sans Bold":    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_sans_bold.typeface.json",
-  "Droid Serif Regular":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_serif_regular.typeface.json",
-  "Droid Serif Bold":   "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_serif_bold.typeface.json",
+  "Helvetiker Regular":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json",
+  "Helvetiker Bold":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json",
+  "Optimer Regular":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/optimer_regular.typeface.json",
+  "Optimer Bold":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/optimer_bold.typeface.json",
+  "Gentilis Regular":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/gentilis_regular.typeface.json",
+  "Gentilis Bold":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/gentilis_bold.typeface.json",
+  "Droid Sans Regular":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_sans_regular.typeface.json",
+  "Droid Sans Bold":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_sans_bold.typeface.json",
+  "Droid Serif Regular":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_serif_regular.typeface.json",
+  "Droid Serif Bold":
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_serif_bold.typeface.json",
 };
 window.FONT_PRESETS = FONT_PRESETS;
 
@@ -75,28 +86,17 @@ const params = (window.params ||= {
   // (compat)
   bg: "#111111",
 
-  // Background modes
-  bgMode: "solid", // solid | gradient | checker
+  // Background modes (checker REMOVED)
+  bgMode: "solid", // solid | gradient
   bgSolid: "#111111",
   bgGradA: "#101018",
   bgGradB: "#1a0f24",
   bgGradAngle: 35,
   bgGradSoft: 0.65,
 
-  bgCheckerType: "checker", // checker | grid | micro
-  bgCheckerScale: 48,
-  bgCheckerLine: 6,
-  bgCheckerRound: 0,
-  bgCheckerRotate: 0,
-  bgCheckerJitter: 0,
-  bgCheckerContrast: 0.22,
-  bgCheckerOpacity: 1.0,
-  bgCheckerColorA: "#0e0e12",
-  bgCheckerColorB: "#161623",
-
-  // Face Fill (solid | gradient | checker)
+  // Face Fill (solid | gradient | checker | perLetter)
   faceMode: "gradient",
-  faceUVSpace: "glyph", // glyph | world
+  faceUVSpace: "glyph", // glyph | world (checker forces world automatically)
   faceSolid: "#ff0000",
   faceGradA: "#ff0055",
   faceGradB: "#00ffcc",
@@ -105,6 +105,9 @@ const params = (window.params ||= {
   faceStopB: 0.5,
   faceStopC: 1,
   faceGradDir: "horizontal",
+
+  // Per-letter face color mode
+  facePerLetterColors: [],
 
   // Face Checker controls
   faceChkScale: 42,
@@ -152,6 +155,7 @@ const params = (window.params ||= {
   animAlsoDepth: true,
   animAxis: "y",
 
+  // preset tuning
   animSpinDeg: 360,
   animExplodeAmount: 220,
   animExplodeTwistDeg: 45,
@@ -167,15 +171,24 @@ const params = (window.params ||= {
   hoverRotateDeg: 20,
   hoverTiltDeg: 18,
   hoverPulse: 0.12,
+  hoverRotateAxis: "z", // rotate mode axis: x|y|z|random
 
-  // Hover spin upgrades
-  hoverSpinAxis: "z",           // x | y | z | random
-  hoverSpinDeg: 120,            // max degrees at f=1
-  hoverSpinRandomize: false,    // random per glyph direction + amount
+  // Hover spin (continuous feel)
+  hoverSpinDeg: 120,
+  hoverSpinAxis: "z", // x|y|z
+  hoverSpinRandomAxis: false,
+  hoverSpinRandomDir: false,
 
+  // Hover explode
   hoverExplodeAmount: 120,
   hoverExplodeTwistDeg: 35,
-  hoverRotateAxis: "z", // x | y | z | random
+
+  // NEW hover mode: spin360 (one-shot)
+  hoverSpin360Axis: "z",        // x|y|z|random
+  hoverSpin360Turns: 1,         // 1 = 360°
+  hoverSpin360Inertia: 0.85,    // 0..0.98
+  hoverSpin360MinTrigger: 0.12, // threshold of hoverF to trigger
+  hoverSpin360Boost: 3.0,       // cursor speed -> impulse multiplier
 
   // Repel
   repelAmount: 80,
@@ -245,12 +258,21 @@ ensureParam("animSpinDeg", 360);
 ensureParam("animExplodeAmount", 220);
 ensureParam("animExplodeTwistDeg", 45);
 
-ensureParam("hoverSpinAxis", "z");
 ensureParam("hoverSpinDeg", 120);
-ensureParam("hoverSpinRandomize", false);
+ensureParam("hoverSpinAxis", "z");
+ensureParam("hoverSpinRandomAxis", false);
+ensureParam("hoverSpinRandomDir", false);
 
 ensureParam("hoverExplodeAmount", 120);
 ensureParam("hoverExplodeTwistDeg", 35);
+
+ensureParam("hoverSpin360Axis", "z");
+ensureParam("hoverSpin360Turns", 1);
+ensureParam("hoverSpin360Inertia", 0.85);
+ensureParam("hoverSpin360MinTrigger", 0.12);
+ensureParam("hoverSpin360Boost", 3.0);
+
+ensureParam("facePerLetterColors", []);
 
 window.params = params;
 
@@ -342,7 +364,7 @@ function _refreshStablePlane(){
 }
 
 // ---------------------------
-// Background texture
+// Background texture (checker REMOVED)
 // ---------------------------
 function makeBackgroundTexture(){
   const size = 1024;
@@ -379,97 +401,6 @@ function makeBackgroundTexture(){
     g.addColorStop(1.0, b);
     ctx.fillStyle = g;
     ctx.fillRect(0,0,size,size);
-  }
-
-  if(mode === "checker"){
-    const type = params.bgCheckerType || "checker";
-    const scale = Math.max(4, Number(params.bgCheckerScale || 48));
-    const line  = Math.max(1, Number(params.bgCheckerLine || 6));
-    const round = clamp(Number(params.bgCheckerRound||0), 0, 0.45);
-    const rot   = (Number(params.bgCheckerRotate||0) * Math.PI)/180;
-    const jitter = clamp01(Number(params.bgCheckerJitter||0));
-    const contrast = clamp01(Number(params.bgCheckerContrast||0.22));
-    const opacity  = clamp01(Number(params.bgCheckerOpacity ?? 1));
-
-    const colA = params.bgCheckerColorA || "#0f0f14";
-    const colB = params.bgCheckerColorB || "#191924";
-
-    ctx.globalAlpha = opacity;
-    ctx.fillStyle = colA;
-    ctx.fillRect(0,0,size,size);
-
-    ctx.save();
-    ctx.translate(size/2, size/2);
-    ctx.rotate(rot);
-    ctx.translate(-size/2, -size/2);
-
-    function rr(x,y,w,h,r){
-      const rad = Math.min(w,h)*r;
-      ctx.beginPath();
-      ctx.moveTo(x+rad,y);
-      ctx.arcTo(x+w,y,x+w,y+h,rad);
-      ctx.arcTo(x+w,y+h,x,y+h,rad);
-      ctx.arcTo(x,y+h,x,y,rad);
-      ctx.arcTo(x,y,x+w,y,rad);
-      ctx.closePath();
-    }
-    function j(){
-      if(jitter<=0) return 0;
-      return (Math.random()*2-1) * jitter * scale * 0.15;
-    }
-
-    ctx.fillStyle = colB;
-
-    if(type === "checker"){
-      const step = scale;
-      for(let y=-step; y<size+step; y+=step){
-        for(let x=-step; x<size+step; x+=step){
-          const ix = Math.floor(x/step);
-          const iy = Math.floor(y/step);
-          if((ix+iy) % 2 === 0) continue;
-          rr(x+j(), y+j(), step, step, round);
-          ctx.fill();
-        }
-      }
-    }
-
-    if(type === "grid"){
-      ctx.globalAlpha = opacity * contrast;
-      ctx.fillStyle = colB;
-      const step = scale;
-      for(let x=-step; x<size+step; x+=step){
-        rr(x+j(), -step, line, size+step*2, round);
-        ctx.fill();
-      }
-      for(let y=-step; y<size+step; y+=step){
-        rr(-step, y+j(), size+step*2, line, round);
-        ctx.fill();
-      }
-    }
-
-    if(type === "micro"){
-      const step = Math.max(8, scale*0.5);
-      ctx.globalAlpha = opacity * contrast;
-      ctx.fillStyle = colB;
-      for(let x=-step; x<size+step; x+=step){
-        rr(x, -step, Math.max(1, line*0.5), size+step*2, round);
-        ctx.fill();
-      }
-      for(let y=-step; y<size+step; y+=step){
-        rr(-step, y, size+step*2, Math.max(1, line*0.5), round);
-        ctx.fill();
-      }
-    }
-
-    ctx.restore();
-    ctx.globalAlpha = 1;
-
-    if(contrast < 1){
-      ctx.globalAlpha = (1-contrast) * 0.35;
-      ctx.fillStyle = colA;
-      ctx.fillRect(0,0,size,size);
-      ctx.globalAlpha = 1;
-    }
   }
 
   const tex = new THREE.CanvasTexture(cv);
@@ -565,7 +496,7 @@ function _applyFX(mat,isFace){
   if(mat.userData._fxApplied) return;
   mat.userData._fxApplied = 1;
 
-  mat.customProgramCacheKey = ()=>`fx_v8_${isFace?1:0}`;
+  mat.customProgramCacheKey = ()=>`fx_v9_${isFace?1:0}`;
 
   mat.onBeforeCompile = (s)=>{
     s.uniforms.uTime={value:0};
@@ -869,7 +800,7 @@ function rebuildFillMaterials(){
   disposeIf(faceTex); disposeIf(sideTex);
   disposeIf(faceMat); disposeIf(sideMat);
 
-  // FACE
+  // FACE (perLetter uses solid-like base, but each glyph clones its own face material)
   if(params.faceMode==="gradient"){
     faceTex = makeGradientTexture3(
       params.faceGradA,params.faceStopA,
@@ -979,10 +910,13 @@ function clearText(){
     if(o.isMesh){
       o.geometry?.dispose?.();
       if(Array.isArray(o.material)){
-        const side=o.material[1];
-        if(side && side!==sideMat) side.dispose?.();
+        const fm=o.material[0];
+        const sm=o.material[1];
+        if(fm && fm!==faceMat) fm.dispose?.();
+        if(sm && sm!==sideMat) sm.dispose?.();
+      }else{
+        if(o.material && o.material!==faceMat && o.material!==sideMat) o.material?.dispose?.();
       }
-      if(o.material && o.material!==faceMat && o.material!==sideMat) o.material?.dispose?.();
     }
     if(o.type==="LineSegments2" || o.isLineSegments2){
       o.geometry?.dispose?.();
@@ -1121,7 +1055,7 @@ function applyWorldUVsNonIndexed(meshes, depth, faceWorld, sideWorld){
 // ---------------------------
 // Glyph building
 // ---------------------------
-function buildGlyph(ch){
+function buildGlyph(ch, glyphIndex){
   const shapes=font.generateShapes(ch, params.size);
 
   const shapeGeo=new THREE.ShapeGeometry(shapes);
@@ -1136,6 +1070,7 @@ function buildGlyph(ch){
   if(geo.index) geo = geo.toNonIndexed();
   writeUVsNonIndexed_Local(geo, params.depth);
 
+  // SIDE mat per glyph
   const sideMatLocal = sideMat.clone();
   sideMatLocal.userData = {};
   sideMatLocal.map = sideMat.map;
@@ -1146,7 +1081,18 @@ function buildGlyph(ch){
   _applyFX(sideMatLocal,false);
   sideMatLocal.needsUpdate=true;
 
-  const mesh=new THREE.Mesh(geo, [faceMat, sideMatLocal]);
+  // FACE mat per glyph only for perLetter
+  let faceMatLocal = faceMat;
+  if(String(params.faceMode||"").toLowerCase() === "perletter"){
+    faceMatLocal = faceMat.clone();
+    faceMatLocal.map = null;
+    faceMatLocal.color.copy(srgbColor("#ffffff"));
+    faceMatLocal.userData = {};
+    _applyFX(faceMatLocal,true);
+    faceMatLocal.needsUpdate = true;
+  }
+
+  const mesh=new THREE.Mesh(geo, [faceMatLocal, sideMatLocal]);
 
   const edges=new THREE.EdgesGeometry(geo, Number(params.edgeThreshold||1));
   let pos=Array.from(edges.attributes.position.array);
@@ -1204,6 +1150,36 @@ window.__applyCharZOffsets = _applyCharZOffsetsFromParams;
 window.__getCharCount = ()=>glyphs.length;
 
 // ---------------------------
+// Per-letter face colors
+// ---------------------------
+function __ensureFacePerLetterColors(){
+  if(!Array.isArray(params.facePerLetterColors)) params.facePerLetterColors=[];
+  const n=glyphs.length;
+  if(params.facePerLetterColors.length !== n){
+    const next=new Array(n);
+    for(let i=0;i<n;i++) next[i]=String(params.facePerLetterColors[i] || "#ffffff");
+    params.facePerLetterColors = next;
+  }
+}
+function __applyFacePerLetterColors(){
+  __ensureFacePerLetterColors();
+  if(String(params.faceMode||"").toLowerCase() !== "perletter") return;
+
+  for(let i=0;i<glyphs.length;i++){
+    const g=glyphs[i];
+    const m=g.faceMatLocal;
+    if(!m) continue;
+    const hex = params.facePerLetterColors[i] || "#ffffff";
+    try{
+      m.color.copy(srgbColor(hex));
+      m.needsUpdate = true;
+    }catch(e){}
+  }
+}
+window.__ensureFacePerLetterColors = __ensureFacePerLetterColors;
+window.__applyFacePerLetterColors = __applyFacePerLetterColors;
+
+// ---------------------------
 // Text layout
 // ---------------------------
 const getAlign=()=>{
@@ -1238,7 +1214,8 @@ function buildText(){
         w+=sw;
         continue;
       }
-      const g=buildGlyph(ch);
+      // glyphIndex is assigned later; build now without it
+      const g=buildGlyph(ch, 0);
       entries.push({space:false,width:g.width,glyph:g});
       w+=g.width;
       if(i!==chars.length-1) w+=params.charSpacing;
@@ -1281,22 +1258,22 @@ function buildText(){
 
       const idx = globalGlyphIndex;
 
-      // stable random direction per glyph (explode + spin randomize)
+      // stable random direction per glyph (explode / hover)
       const a = hash01(idx+17) * Math.PI*2;
       const mag = 0.6 + 0.4*hash01(idx+91);
       const rx = Math.cos(a) * mag;
       const ry = Math.sin(a) * mag;
 
-      // stable sign + amplitude for spin randomize
-      const sign = (hash01(idx+123) < 0.5) ? -1 : 1;
-      const amp  = 0.45 + 0.55*hash01(idx+321); // 0.45..1.0
-
-      // stable random axis pick
-      const uax = hash01(idx+777);
-      const axPick = (uax < 0.333) ? "x" : (uax < 0.666) ? "y" : "z";
+      // stable axis pick per glyph
+      const axr = hash01(idx+333);
+      const axisPick = (axr < 0.333) ? "x" : (axr < 0.666) ? "y" : "z";
 
       const entry={
         group, inner, mesh, stroke,
+
+        // cache local face mat (for perLetter mode)
+        faceMatLocal: Array.isArray(mesh.material) ? mesh.material[0] : null,
+
         baseDepth: params.depth,
 
         baseGroupX: group.position.x,
@@ -1305,6 +1282,7 @@ function buildText(){
         baseRotX: group.rotation.x, baseRotY: group.rotation.y, baseRotZ: group.rotation.z,
         baseScaleX: group.scale.x, baseScaleY: group.scale.y, baseScaleZ: group.scale.z,
         baseX: x,
+
         depthF: 1,
         _breathMul: 1,
         zOffset: 0,
@@ -1312,7 +1290,7 @@ function buildText(){
         hoverF: 0,
         overlayIndex: idx,
 
-        // animation offsets (so hover can incorporate them cleanly)
+        // animation offsets
         animOffsetX: 0,
         animOffsetY: 0,
         animOffsetZ: 0,
@@ -1325,10 +1303,13 @@ function buildText(){
         _rndX: rx,
         _rndY: ry,
 
-        // spin randomize
-        _rndSpinSign: sign,
-        _rndSpinAmp: amp,
-        _rndAxisPick: axPick,
+        // stable per glyph axis
+        _rndAxisPick: axisPick,
+
+        // spin360 state
+        spin360Vel: 0,
+        spin360Angle: 0,
+        spin360PrevHot: false,
       };
 
       _updateDepth(entry);
@@ -1347,6 +1328,7 @@ function buildText(){
     y -= lineH;
   }
 
+  // center textGroup
   const box=new THREE.Box3().setFromObject(textGroup);
   const sizeVec=new THREE.Vector3();
   const centerVec=new THREE.Vector3();
@@ -1361,7 +1343,12 @@ function buildText(){
 
   const meshes = glyphs.map(g=>g.mesh);
 
-  const faceWorld = (params.faceMode!=="solid" && params.faceUVSpace==="world");
+  // IMPORTANT:
+  // - checker faces force WORLD uv so checks are consistent across glyph widths (fixes "I")
+  const faceWorld =
+    (String(params.faceMode||"").toLowerCase() === "checker") ||
+    (params.faceMode!=="solid" && params.faceUVSpace==="world");
+
   const sideWorld = (params.sideMode==="gradient" && params.sideUVSpace==="world");
 
   applyWorldUVsNonIndexed(meshes, params.depth, faceWorld, sideWorld);
@@ -1375,6 +1362,11 @@ function buildText(){
   renderer.compile(scene,camera);
 
   _applyCharZOffsetsFromParams();
+
+  // per-letter face colors
+  __applyFacePerLetterColors();
+  try{ window.__rebuildFaceColorControls?.(); }catch(e){}
+
   try{ window.__rebuildZControls?.(); }catch(e){}
   _syncFXUniforms();
 }
@@ -1444,7 +1436,7 @@ window.applyCameraPreset = applyCameraPreset;
 window.reframeToText = reframeToText;
 
 // ---------------------------
-// GSAP Preset Animation (spin + explode kept; cylinder removed)
+// GSAP Preset Animation (NO CYLINDER)
 // ---------------------------
 function stopAnimation(){
   if(tl){ tl.kill(); tl=null; }
@@ -1497,6 +1489,9 @@ function playAnimation(){
 
   function applyProxy(p){
     for(const m of p.members){
+      const bx = (m.baseGroupX||0);
+      const by = (m.baseGroupY||0);
+
       let ox=0, oy=0, oz=0;
       let arx=0, ary=0, arz=0;
       let asc=1;
@@ -1593,13 +1588,17 @@ function playAnimation(){
 window.playAnimation = playAnimation;
 
 // ---------------------------
-// Hover (spin upgraded)
+// Hover (adds spin360)
 // ---------------------------
 let pointerActive=false;
 let pointerNDC=new THREE.Vector2(0,0);
 const cursorLocal=new THREE.Vector3(0,0,0);
 const cursorLocalTarget=new THREE.Vector3(0,0,0);
 const _cursorDelta=new THREE.Vector3();
+
+// cursor speed for inertia feel
+let _prevCursorLocal = new THREE.Vector3(0,0,0);
+let _cursorSpeed = 0;
 
 function _updatePointerFromEvent(e){
   const r=renderer.domElement.getBoundingClientRect();
@@ -1652,15 +1651,9 @@ function resetHoverTransforms(){
 }
 
 function updateHoverEffects(){
-  if(!glyphs.length || (params.hoverMode||"none")==="none"){
-    resetHoverTransforms(); _hoverStrength=0; return;
-  }
-  if(!params.proximityLift){
-    resetHoverTransforms(); _hoverStrength=0; return;
-  }
-  if(!pointerActive){
-    resetHoverTransforms(); _hoverStrength=0; return;
-  }
+  if(!glyphs.length || (params.hoverMode||"none")==="none"){ resetHoverTransforms(); _hoverStrength=0; return; }
+  if(!params.proximityLift){ resetHoverTransforms(); _hoverStrength=0; return; }
+  if(!pointerActive){ resetHoverTransforms(); _hoverStrength=0; return; }
 
   if(getCursorLocalOnTextPlane(cursorLocalTarget)){
     const ms=clamp(Number(params.cursorSmoothing||.85),0,.98);
@@ -1670,8 +1663,15 @@ function updateHoverEffects(){
     const len=_cursorDelta.length();
     if(len>maxStep) _cursorDelta.multiplyScalar(maxStep/len);
     cursorLocal.addScaledVector(_cursorDelta,a);
+
+    // cursor speed (smoothed)
+    const dCur = cursorLocal.distanceTo(_prevCursorLocal);
+    _cursorSpeed = lerp(_cursorSpeed, dCur, 0.25);
+    _prevCursorLocal.copy(cursorLocal);
   }else{
-    resetHoverTransforms(); _hoverStrength=0; return;
+    resetHoverTransforms();
+    _hoverStrength=0;
+    return;
   }
 
   const r=Math.max(1e-6,Number(params.proximityRadiusWorld||140));
@@ -1690,9 +1690,6 @@ function updateHoverEffects(){
   const sweepYMix=Number(params.sweepYMix||0.25);
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg ?? 120));
-  const spinAxisSetting = String(params.hoverSpinAxis || "z").toLowerCase();
-  const spinRandomize = !!params.hoverSpinRandomize;
-
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
 
@@ -1770,19 +1767,55 @@ function updateHoverEffects(){
       ty += ny*push;
 
     }else if(hoverMode==="spin"){
-      // axis selectable, optional stable random direction+amount per glyph
-      let ax = spinAxisSetting;
-      if(ax === "random") ax = (g._rndAxisPick || "z");
+      // continuous spin on hover (upgraded controls)
+      let ax = String(params.hoverSpinAxis || "z").toLowerCase();
+      if(params.hoverSpinRandomAxis) ax = (g._rndAxisPick || "z");
 
-      const mult = spinRandomize ? ((g._rndSpinSign||1) * (g._rndSpinAmp||1)) : 1;
-      const spin = spinRad * f * mult;
+      const dir = params.hoverSpinRandomDir ? (hash01((g.overlayIndex||0)+777) < 0.5 ? -1 : 1) : 1;
+      const sspin = spinRad * f * dir;
 
-      if(ax === "x") rx += spin;
-      else if(ax === "y") ry += spin;
-      else rz += spin;
+      if(ax === "x") rx += sspin;
+      else if(ax === "y") ry += sspin;
+      else rz += sspin;
 
       const s = 1 + (pulse*0.6)*f;
       sx*=s; sy*=s;
+
+    }else if(hoverMode==="spin360"){
+      // one-shot 360 spin with inertia + speed-responsive impulse
+      const minTrig = clamp01(Number(params.hoverSpin360MinTrigger ?? 0.12));
+      const inertia = clamp(Number(params.hoverSpin360Inertia ?? 0.85), 0, 0.98);
+      const turns = Math.max(0.25, Number(params.hoverSpin360Turns ?? 1));
+      const boost = Math.max(0, Number(params.hoverSpin360Boost ?? 3.0));
+
+      const hot = f >= minTrig;
+      if(hot && !g.spin360PrevHot){
+        const speedFactor = clamp(_cursorSpeed / 18, 0.15, 2.5);
+        const impulse = (Math.PI * 2) * turns * speedFactor * boost * 0.02;
+
+        g.spin360Vel += impulse;
+        g.spin360Vel = Math.max(g.spin360Vel, (Math.PI * 2) * turns * 0.02);
+      }
+      g.spin360PrevHot = hot;
+
+      // integrate / damp
+      g.spin360Angle += g.spin360Vel;
+      g.spin360Vel *= inertia;
+
+      if(Math.abs(g.spin360Vel) < 0.0006){
+        g.spin360Vel = 0;
+        // gently settle angle back toward nearest 2π multiple (optional)
+        // g.spin360Angle = 0; // if you want snapping, enable this
+      }
+
+      let ax = String(params.hoverSpin360Axis || "z").toLowerCase();
+      if(ax === "random") ax = (g._rndAxisPick || "z");
+
+      if(ax === "x") rx += g.spin360Angle;
+      else if(ax === "y") ry += g.spin360Angle;
+      else rz += g.spin360Angle;
+
+      ty += lift*0.18*f;
 
     }else if(hoverMode==="explode"){
       tx += (g._rndX||0) * explodeAmt * f;

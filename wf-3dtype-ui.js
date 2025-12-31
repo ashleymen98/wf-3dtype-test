@@ -1,7 +1,7 @@
 // wf-3dtype-ui.js
 (function(){
   const TAG="[3DType/UI]";
-  const UI_VERSION="ui_v11_hoverAxis + cylinderLines";
+  const UI_VERSION="ui_v11_removeCylinder + hoverSpinAxis+randomize";
   console.log(TAG, UI_VERSION);
   window.__WF_3DTYPE_UI_VERSION__ = UI_VERSION;
 
@@ -105,27 +105,21 @@
       ensureParam(params,"repelClamp",140);
 
       // ---------------------------
-      // DEFAULTS: spin/explode + hover axis + cylinder lines
+      // Animation defaults (kept)
       // ---------------------------
       ensureParam(params,"animSpinDeg",360);
       ensureParam(params,"animExplodeAmount",220);
       ensureParam(params,"animExplodeTwistDeg",45);
-      ensureParam(params,"animCylinderRadius",260);
-      ensureParam(params,"animCylinderArcDeg",240);
 
+      // ---------------------------
+      // Hover spin upgrades
+      // ---------------------------
+      ensureParam(params,"hoverSpinAxis","z");
       ensureParam(params,"hoverSpinDeg",120);
+      ensureParam(params,"hoverSpinRandomize",false);
+
       ensureParam(params,"hoverExplodeAmount",120);
       ensureParam(params,"hoverExplodeTwistDeg",35);
-
-      ensureParam(params,"hoverRotateAxis","z");
-
-      ensureParam(params,"cylDiameter",520);
-      ensureParam(params,"cylDiameterStep",80);
-      ensureParam(params,"cylSpeed",0.12);
-      ensureParam(params,"cylSpeedStep",0.03);
-      ensureParam(params,"cylPhase",0.0);
-      ensureParam(params,"cylArc",1.0);
-      ensureParam(params,"cylFaceInward",true);
 
       const Pane = window.Tweakpane.Pane;
       const pane = new Pane({ container: root, title: "Controls" });
@@ -619,7 +613,6 @@
         "Inflate":"inflate",
         "Spin":"spin",
         "Explode":"explode",
-        "Cylinder":"cylinder",
       }});
       fAnim.addBinding(params,"animSpeed",{label:"speed",min:.1,max:4,step:.05});
       fAnim.addBinding(params,"animStagger",{label:"stagger",min:0,max:.3,step:.005});
@@ -640,28 +633,10 @@
       fAnim.addBinding(params,"animInflate",{label:"inflate",min:0,max:.6,step:.01});
       fAnim.addBinding(params,"animAlsoDepth",{label:"also depth"});
 
-      // New preset controls (legacy morph tuners remain)
       const fPresetEx=tMotion.addFolder({title:"Preset Tuning"});
       fPresetEx.addBinding(params,"animSpinDeg",{label:"spin deg",min:0,max:1440,step:5});
       fPresetEx.addBinding(params,"animExplodeAmount",{label:"explode amt",min:0,max:800,step:5});
       fPresetEx.addBinding(params,"animExplodeTwistDeg",{label:"explode twist",min:0,max:180,step:1});
-      fPresetEx.addBinding(params,"animCylinderRadius",{label:"(legacy) cyl radius",min:20,max:900,step:5});
-      fPresetEx.addBinding(params,"animCylinderArcDeg",{label:"(legacy) cyl arc deg",min:30,max:360,step:5});
-
-      // Cylinder per-line rings controls
-      const fCyl = fAnim.addFolder({title:"Cylinder (Lines)"});
-      fCyl.addBinding(params,"cylDiameter",{label:"diameter",min:40,max:2000,step:1});
-      fCyl.addBinding(params,"cylDiameterStep",{label:"+diam/line",min:-400,max:800,step:1});
-      fCyl.addBinding(params,"cylSpeed",{label:"speed",min:-1,max:1,step:0.01});
-      fCyl.addBinding(params,"cylSpeedStep",{label:"+spd/line",min:-1,max:1,step:0.01});
-      fCyl.addBinding(params,"cylArc",{label:"arc",min:0.05,max:1,step:0.01});
-      fCyl.addBinding(params,"cylPhase",{label:"phase",min:-2,max:2,step:0.01});
-      fCyl.addBinding(params,"cylFaceInward",{label:"face inward"});
-
-      function refreshCylUI(){
-        fCyl.element.style.display = (String(params.animPreset||"").toLowerCase() === "cylinder") ? "" : "none";
-      }
-      refreshCylUI();
 
       fAnim.addButton({title:"Play"}).on("click",()=>{window.__tp_animPlaying=true;window.playAnimation();});
       fAnim.addButton({title:"Stop"}).on("click",()=>{window.__tp_animPlaying=false;window.stopAnimation();});
@@ -694,18 +669,13 @@
       fHover.addBinding(params,"proximityRadiusWorld",{label:"radius",min:10,max:800,step:1});
       fHover.addBinding(params,"proximityLiftAmount",{label:"lift",min:0,max:400,step:1});
       fHover.addBinding(params,"hoverRotateDeg",{label:"rotate",min:0,max:180,step:1});
-
-      // NEW: rotate axis selector
-      fHover.addBinding(params,"hoverRotateAxis",{
-        label:"rotate axis",
-        options:{X:"x",Y:"y",Z:"z",Random:"random"}
-      });
-
       fHover.addBinding(params,"hoverTiltDeg",{label:"tilt",min:0,max:90,step:1});
       fHover.addBinding(params,"hoverPulse",{label:"pulse",min:0,max:.8,step:.01});
 
       const fHoverEx=tMotion.addFolder({title:"Hover Extras"});
+      fHoverEx.addBinding(params,"hoverSpinAxis",{label:"spin axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
       fHoverEx.addBinding(params,"hoverSpinDeg",{label:"spin deg",min:0,max:720,step:5});
+      fHoverEx.addBinding(params,"hoverSpinRandomize",{label:"randomize"}); // direction + amount (stable)
       fHoverEx.addBinding(params,"hoverExplodeAmount",{label:"explode amt",min:0,max:600,step:5});
       fHoverEx.addBinding(params,"hoverExplodeTwistDeg",{label:"explode twist",min:0,max:180,step:1});
 
@@ -755,19 +725,15 @@
       const ANIM_KEYS=new Set([
         "animPreset","animSpeed","animStagger","animMinPct","animMaxPct","animEase","animLoop","animStaggerMode","animStaggerFrom",
         "animRotateDeg","animInflate","animAlsoDepth","animAxis",
-        "animSpinDeg","animExplodeAmount","animExplodeTwistDeg","animCylinderRadius","animCylinderArcDeg"
-      ]);
-
-      const CYL_KEYS=new Set([
-        "cylDiameter","cylDiameterStep","cylSpeed","cylSpeedStep","cylPhase","cylArc","cylFaceInward"
+        "animSpinDeg","animExplodeAmount","animExplodeTwistDeg"
       ]);
 
       const HOVER_KEYS=new Set([
         "hoverMode","proximityLift","proximityRadiusWorld","proximityLiftAmount","hoverRotateDeg","hoverTiltDeg","hoverPulse",
-        "hoverRotateAxis",
         "proximityFalloff","cursorSmoothing","liftSmoothing",
         "repelAmount","repelMinDistance","repelClamp",
-        "hoverSpinDeg","hoverExplodeAmount","hoverExplodeTwistDeg"
+        "hoverSpinAxis","hoverSpinDeg","hoverSpinRandomize",
+        "hoverExplodeAmount","hoverExplodeTwistDeg"
       ]);
 
       const GRAD_ANIM_KEYS=new Set([
@@ -783,19 +749,13 @@
 
         if(k==="faceMode"){ refreshFaceUI(); }
 
-        if(k==="animPreset"){ refreshCylUI(); }
-
         if(FX_KEYS.has(k)){ window._syncFXUniforms(); return; }
         if(GRAD_ANIM_KEYS.has(k)){ return; }
 
         if(k==="cameraPreset"){ window.applyCameraPreset(); return; }
 
         if(HOVER_KEYS.has(k)){
-          return;
-        }
-
-        if(CYL_KEYS.has(k)){
-          // cylinder params apply live (procedural); no rebuild needed
+          // hover runs every frame; nothing else needed
           return;
         }
 

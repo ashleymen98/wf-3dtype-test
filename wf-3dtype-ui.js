@@ -1,7 +1,7 @@
 // wf-3dtype-ui.js
 (function(){
   const TAG="[3DType/UI]";
-  const UI_VERSION="ui_v11_removeCylinder + hoverSpinAxis+randomize";
+  const UI_VERSION="ui_v11_spin360+perLetterFace+noBgChecker";
   console.log(TAG, UI_VERSION);
   window.__WF_3DTYPE_UI_VERSION__ = UI_VERSION;
 
@@ -30,6 +30,8 @@
     window.setFontFromUploadedJsonText &&
     window.__applyCharZOffsets &&
     window.__getCharCount &&
+    window.__applyFacePerLetterColors &&
+    window.__ensureFacePerLetterColors &&
     window.__WF_3DTYPE_TOOL__ &&
     document.getElementById("pane") &&
     (document.getElementById("pane-inner") || document.getElementById("pane"))
@@ -82,44 +84,28 @@
       ensureParam(params,"bgGradAngle",35);
       ensureParam(params,"bgGradSoft",0.65);
 
-      ensureParam(params,"bgCheckerType","checker");
-      ensureParam(params,"bgCheckerScale",48);
-      ensureParam(params,"bgCheckerLine",6);
-      ensureParam(params,"bgCheckerRound",0);
-      ensureParam(params,"bgCheckerRotate",0);
-      ensureParam(params,"bgCheckerJitter",0);
-      ensureParam(params,"bgCheckerContrast",0.22);
-      ensureParam(params,"bgCheckerOpacity",1.0);
-      ensureParam(params,"bgCheckerColorA","#0e0e12");
-      ensureParam(params,"bgCheckerColorB","#161623");
+      ensureParam(params,"facePerLetterColors", []);
 
-      ensureParam(params,"faceChkScale",42);
-      ensureParam(params,"faceChkLineWidth",3);
-      ensureParam(params,"faceChkRotate",0);
-      ensureParam(params,"faceChkColorA","#0e0e12");
-      ensureParam(params,"faceChkColorB","#161623");
-      ensureParam(params,"faceChkLineColor","#ffffff");
-
-      ensureParam(params,"repelAmount",80);
-      ensureParam(params,"repelMinDistance",6);
-      ensureParam(params,"repelClamp",140);
-
-      // ---------------------------
-      // Animation defaults (kept)
-      // ---------------------------
+      // animation tuning defaults
       ensureParam(params,"animSpinDeg",360);
       ensureParam(params,"animExplodeAmount",220);
       ensureParam(params,"animExplodeTwistDeg",45);
 
-      // ---------------------------
-      // Hover spin upgrades
-      // ---------------------------
-      ensureParam(params,"hoverSpinAxis","z");
+      // hover tuning defaults
       ensureParam(params,"hoverSpinDeg",120);
-      ensureParam(params,"hoverSpinRandomize",false);
+      ensureParam(params,"hoverSpinAxis","z");
+      ensureParam(params,"hoverSpinRandomAxis",false);
+      ensureParam(params,"hoverSpinRandomDir",false);
 
       ensureParam(params,"hoverExplodeAmount",120);
       ensureParam(params,"hoverExplodeTwistDeg",35);
+
+      // spin360 defaults
+      ensureParam(params,"hoverSpin360Axis","z");
+      ensureParam(params,"hoverSpin360Turns",1);
+      ensureParam(params,"hoverSpin360Inertia",0.85);
+      ensureParam(params,"hoverSpin360MinTrigger",0.12);
+      ensureParam(params,"hoverSpin360Boost",3.0);
 
       const Pane = window.Tweakpane.Pane;
       const pane = new Pane({ container: root, title: "Controls" });
@@ -166,46 +152,6 @@
         setHidden(!window[CONTROLS_KEY]);
       }
       window.addEventListener("keydown", onKeyDown, true);
-
-      // =========================================================
-      // Collapse shell detection
-      // =========================================================
-      const paneShell = document.getElementById("pane");
-
-      function findFoldButton(){
-        return root.querySelector("button[aria-expanded]") ||
-               root.querySelector(".tp-rotv_t button[aria-expanded]") ||
-               root.querySelector("[class*='rotv_t'] button[aria-expanded]");
-      }
-
-      let foldObserver=null, reattachObserver=null;
-
-      function syncCollapsedFromButton(){
-        if(!paneShell) return;
-        const btn = findFoldButton();
-        if(!btn) return;
-        const expanded = btn.getAttribute("aria-expanded");
-        if(expanded == null) return;
-        paneShell.classList.toggle("is-collapsed", expanded === "false");
-      }
-
-      function attachFoldObserver(){
-        const btn = findFoldButton();
-        if(!btn) return false;
-        syncCollapsedFromButton();
-        foldObserver = new MutationObserver(syncCollapsedFromButton);
-        foldObserver.observe(btn, { attributes:true, attributeFilter:["aria-expanded"] });
-        return true;
-      }
-
-      if(!attachFoldObserver()){
-        reattachObserver = new MutationObserver(()=>{
-          if(attachFoldObserver()){
-            try{ reattachObserver.disconnect(); }catch(e){}
-          }
-        });
-        reattachObserver.observe(root, { childList:true, subtree:true });
-      }
 
       // =========================================================
       // TAB RESCUE
@@ -288,6 +234,7 @@
         params.text=ta.value;
         window.buildText();
         try{ window.__rebuildZControls?.(); }catch(e){}
+        try{ window.__rebuildFaceColorControls?.(); }catch(e){}
         if(window.__tp_animPlaying) window.playAnimation();
       },60);
       ta.addEventListener("input",onTextInput);
@@ -335,6 +282,7 @@
           await window.applyFontSelection();
           window.buildText();
           try{ window.__rebuildZControls?.(); }catch(e){}
+          try{ window.__rebuildFaceColorControls?.(); }catch(e){}
           if(window.__tp_animPlaying) window.playAnimation();
         }catch(e){
           console.warn(TAG,"apply font failed",e);
@@ -379,6 +327,7 @@
           window.setFontFromUploadedJsonText(text);
           window.buildText();
           try{ window.__rebuildZControls?.(); }catch(e){}
+          try{ window.__rebuildFaceColorControls?.(); }catch(e){}
           if(window.__tp_animPlaying) window.playAnimation();
 
         }catch(e){
@@ -481,8 +430,7 @@
       // LOOK
       // ---------------------------
       const fBg=tLook.addFolder({title:"Background"});
-
-      const bBgMode = fBg.addBinding(params,"bgMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient",Checker:"checker"}});
+      const bBgMode = fBg.addBinding(params,"bgMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient"}});
       const bBgSolid = fBg.addBinding(params,"bgSolid",{label:"solid",view:"color"});
 
       const fBgGrad = fBg.addFolder({title:"Gradient"});
@@ -491,23 +439,10 @@
       const bBgGradAngle = fBgGrad.addBinding(params,"bgGradAngle",{label:"angle",min:0,max:360,step:1});
       const bBgGradSoft  = fBgGrad.addBinding(params,"bgGradSoft",{label:"soft",min:0,max:1,step:0.01});
 
-      const fBgChecker = fBg.addFolder({title:"Checker"});
-      const bChkType = fBgChecker.addBinding(params,"bgCheckerType",{label:"type",options:{Checker:"checker",Grid:"grid",Micro:"micro"}});
-      const bChkScale = fBgChecker.addBinding(params,"bgCheckerScale",{label:"scale",min:4,max:240,step:1});
-      const bChkLine  = fBgChecker.addBinding(params,"bgCheckerLine",{label:"line",min:1,max:60,step:1});
-      const bChkRound = fBgChecker.addBinding(params,"bgCheckerRound",{label:"round",min:0,max:0.45,step:0.01});
-      const bChkRot   = fBgChecker.addBinding(params,"bgCheckerRotate",{label:"rotate",min:0,max:360,step:1});
-      const bChkJit   = fBgChecker.addBinding(params,"bgCheckerJitter",{label:"jitter",min:0,max:1,step:0.01});
-      const bChkCon   = fBgChecker.addBinding(params,"bgCheckerContrast",{label:"contrast",min:0,max:1,step:0.01});
-      const bChkOp    = fBgChecker.addBinding(params,"bgCheckerOpacity",{label:"opacity",min:0,max:1,step:0.01});
-      const bChkA     = fBgChecker.addBinding(params,"bgCheckerColorA",{label:"A",view:"color"});
-      const bChkB     = fBgChecker.addBinding(params,"bgCheckerColorB",{label:"B",view:"color"});
-
       function refreshBgUI(){
         const m = params.bgMode;
         bBgSolid.element.style.display = (m==="solid") ? "" : "none";
         fBgGrad.element.style.display  = (m==="gradient") ? "" : "none";
-        fBgChecker.element.style.display = (m==="checker") ? "" : "none";
       }
       refreshBgUI();
 
@@ -515,18 +450,22 @@
         try{ window.rebuildBackground?.(); }catch(e){}
       }
 
-      [bBgMode,bBgSolid,bBgGradA,bBgGradB,bBgGradAngle,bBgGradSoft,bChkType,bChkScale,bChkLine,bChkRound,bChkRot,bChkJit,bChkCon,bChkOp,bChkA,bChkB]
-        .forEach(b=>{
-          try{ b.on("change", ()=>{
-            if(b===bBgMode) refreshBgUI();
-            rebuildBg();
-          }); }catch(e){}
-        });
+      ;[bBgMode,bBgSolid,bBgGradA,bBgGradB,bBgGradAngle,bBgGradSoft].forEach(b=>{
+        try{ b.on("change", ()=>{
+          if(b===bBgMode) refreshBgUI();
+          rebuildBg();
+        }); }catch(e){}
+      });
 
       const fFill=tLook.addFolder({title:"Fill"});
       const fFace=fFill.addFolder({title:"Faces"});
 
-      fFace.addBinding(params,"faceMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient",Checker:"checker"}});
+      fFace.addBinding(params,"faceMode",{label:"mode",options:{
+        Solid:"solid",
+        Gradient:"gradient",
+        Checker:"checker",
+        "Per Letter":"perLetter"
+      }});
       fFace.addBinding(params,"faceUVSpace",{label:"UV",options:{Glyph:"glyph",World:"world"}});
       fFace.addBinding(params,"faceSolid",{view:"color"});
 
@@ -543,10 +482,56 @@
       fFaceChk.addBinding(params,"faceChkColorB",{label:"square B",view:"color"});
       fFaceChk.addBinding(params,"faceChkLineColor",{label:"line",view:"color"});
 
+      // Per-letter face colors UI
+      const fFacePer = fFace.addFolder({title:"Per-letter Face Color"});
+      let faceColorProxy = {};
+      let faceColorBindings = [];
+      let faceNoGlyphBlade = null;
+
+      function clearFaceColorBindings(){
+        for(const b of faceColorBindings){ try{ b.dispose?.(); }catch(e){} }
+        faceColorBindings.length = 0;
+        if(faceNoGlyphBlade){ try{ faceNoGlyphBlade.dispose?.(); }catch(e){} faceNoGlyphBlade=null; }
+      }
+      function syncFaceColorProxy(){
+        window.__ensureFacePerLetterColors?.();
+        faceColorProxy = {};
+        for(let i=0;i<params.facePerLetterColors.length;i++){
+          faceColorProxy["c"+i] = String(params.facePerLetterColors[i] || "#ffffff");
+        }
+      }
+      function syncFaceColorParams(){
+        for(let i=0;i<params.facePerLetterColors.length;i++){
+          params.facePerLetterColors[i] = String(faceColorProxy["c"+i] || "#ffffff");
+        }
+      }
+      function rebuildFaceColorControls(){
+        clearFaceColorBindings();
+        window.__ensureFacePerLetterColors?.();
+        syncFaceColorProxy();
+
+        const n = params.facePerLetterColors.length;
+        if(n===0){
+          faceNoGlyphBlade = fFacePer.addBlade({view:"text", value:"(No glyphs)"});
+          return;
+        }
+        for(let i=0;i<n;i++){
+          const b = fFacePer.addBinding(faceColorProxy, "c"+i, { label: String(i+1), view:"color" });
+          b.on("change", ()=>{
+            syncFaceColorParams();
+            window.__applyFacePerLetterColors?.();
+          });
+          faceColorBindings.push(b);
+        }
+      }
+      window.__rebuildFaceColorControls = rebuildFaceColorControls;
+
       function refreshFaceUI(){
         fFaceChk.element.style.display = (params.faceMode==="checker") ? "" : "none";
+        fFacePer.element.style.display = (params.faceMode==="perLetter") ? "" : "none";
       }
       refreshFaceUI();
+      rebuildFaceColorControls();
 
       const fSide=fFill.addFolder({title:"Extrusion"});
       fSide.addBinding(params,"sideMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient"}});
@@ -612,7 +597,7 @@
         "Wobble":"wobble",
         "Inflate":"inflate",
         "Spin":"spin",
-        "Explode":"explode",
+        "Explode":"explode"
       }});
       fAnim.addBinding(params,"animSpeed",{label:"speed",min:.1,max:4,step:.05});
       fAnim.addBinding(params,"animStagger",{label:"stagger",min:0,max:.3,step:.005});
@@ -662,6 +647,7 @@
         Pulse:"pulse",
         Repel:"repel",
         Spin:"spin",
+        "Spin 360":"spin360",
         Explode:"explode",
         None:"none"
       }});
@@ -673,9 +659,21 @@
       fHover.addBinding(params,"hoverPulse",{label:"pulse",min:0,max:.8,step:.01});
 
       const fHoverEx=tMotion.addFolder({title:"Hover Extras"});
-      fHoverEx.addBinding(params,"hoverSpinAxis",{label:"spin axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
+
+      // continuous spin controls
       fHoverEx.addBinding(params,"hoverSpinDeg",{label:"spin deg",min:0,max:720,step:5});
-      fHoverEx.addBinding(params,"hoverSpinRandomize",{label:"randomize"}); // direction + amount (stable)
+      fHoverEx.addBinding(params,"hoverSpinAxis",{label:"spin axis",options:{X:"x",Y:"y",Z:"z"}});
+      fHoverEx.addBinding(params,"hoverSpinRandomAxis",{label:"spin random axis"});
+      fHoverEx.addBinding(params,"hoverSpinRandomDir",{label:"spin random dir"});
+
+      // spin360 controls
+      fHoverEx.addBinding(params,"hoverSpin360Axis",{label:"spin360 axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
+      fHoverEx.addBinding(params,"hoverSpin360Turns",{label:"turns",min:0.25,max:4,step:0.25});
+      fHoverEx.addBinding(params,"hoverSpin360Inertia",{label:"inertia",min:0,max:0.98,step:0.01});
+      fHoverEx.addBinding(params,"hoverSpin360MinTrigger",{label:"trigger",min:0.01,max:0.5,step:0.01});
+      fHoverEx.addBinding(params,"hoverSpin360Boost",{label:"speed boost",min:0,max:10,step:0.1});
+
+      // explode controls
       fHoverEx.addBinding(params,"hoverExplodeAmount",{label:"explode amt",min:0,max:600,step:5});
       fHoverEx.addBinding(params,"hoverExplodeTwistDeg",{label:"explode twist",min:0,max:180,step:1});
 
@@ -732,7 +730,8 @@
         "hoverMode","proximityLift","proximityRadiusWorld","proximityLiftAmount","hoverRotateDeg","hoverTiltDeg","hoverPulse",
         "proximityFalloff","cursorSmoothing","liftSmoothing",
         "repelAmount","repelMinDistance","repelClamp",
-        "hoverSpinAxis","hoverSpinDeg","hoverSpinRandomize",
+        "hoverSpinDeg","hoverSpinAxis","hoverSpinRandomAxis","hoverSpinRandomDir",
+        "hoverSpin360Axis","hoverSpin360Turns","hoverSpin360Inertia","hoverSpin360MinTrigger","hoverSpin360Boost",
         "hoverExplodeAmount","hoverExplodeTwistDeg"
       ]);
 
@@ -740,6 +739,8 @@
         "faceGradAnimOn","faceGradSpeed","faceGradAngle",
         "sideGradAnimOn","sideGradSpeed","sideGradAngle"
       ]);
+
+      const BG_KEYS=new Set(["bgMode","bgSolid","bgGradA","bgGradB","bgGradAngle","bgGradSoft"]);
 
       pane.on("change",(ev)=>{
         const k=ev?.target?.key;
@@ -749,13 +750,18 @@
 
         if(k==="faceMode"){ refreshFaceUI(); }
 
+        if(BG_KEYS.has(k)){ rebuildBg(); return; }
+
         if(FX_KEYS.has(k)){ window._syncFXUniforms(); return; }
         if(GRAD_ANIM_KEYS.has(k)){ return; }
 
         if(k==="cameraPreset"){ window.applyCameraPreset(); return; }
 
+        // per-letter face colors apply live
+        if(k.startsWith("facePerLetterColors")){ window.__applyFacePerLetterColors?.(); return; }
+
         if(HOVER_KEYS.has(k)){
-          // hover runs every frame; nothing else needed
+          // hover runs every frame
           return;
         }
 
@@ -769,6 +775,7 @@
           window.rebuildFillMaterials();
           window.buildText();
           try{ window.__rebuildZControls?.(); }catch(e){}
+          try{ window.__rebuildFaceColorControls?.(); }catch(e){}
           if(window.__tp_animPlaying) window.playAnimation();
           return;
         }
@@ -777,14 +784,13 @@
       window.buildText();
       window._syncFXUniforms();
       try{ window.__rebuildZControls?.(); }catch(e){}
+      try{ window.__rebuildFaceColorControls?.(); }catch(e){}
 
       attachRescueToTabClicks();
 
       window.__tp_ui_cleanup = ()=>{
         try{ ta.removeEventListener("input", onTextInput); }catch(e){}
         try{ window.removeEventListener("keydown", onKeyDown, true); }catch(e){}
-        try{ foldObserver?.disconnect?.(); }catch(e){}
-        try{ reattachObserver?.disconnect?.(); }catch(e){}
         try{ pane.dispose(); }catch(e){}
       };
     }

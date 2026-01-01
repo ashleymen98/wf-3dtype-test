@@ -1895,6 +1895,10 @@ let _prevCursorLocal = new THREE.Vector3(0, 0, 0);
 let _cursorSpeed = 0; // smoothed units/sec
 
 let _hoveredGlyphIdx = -1;
+let _spin360MissFrames = 0;
+const SPIN360_MISS_FRAMES_BEFORE_RESET = 8; // ~8 frames = ~130ms @60fps
+const SPIN360_RETRIGGER_COOLDOWN = 0.12; // seconds
+
 
 function _updatePointerFromEvent(e) {
   const r = renderer.domElement.getBoundingClientRect();
@@ -1967,18 +1971,28 @@ function _spin360Trigger(g) {
   const add = Math.PI * 2 * dir;
 
   // animate additive value, not rotation directly (so it layers with preset animation & hover lerp)
-  gsap.to(g, {
-    _spin360Add: g._spin360Add + add,
-    duration: dur,
-    ease,
-    overwrite: true,
-    onComplete: () => {
-      // keep it bounded (visual is periodic anyway)
-      if (Math.abs(g._spin360Add) > Math.PI * 50) {
-        g._spin360Add = g._spin360Add % (Math.PI * 2);
-      }
-    },
-  });
+  const now = _fxTime || performance.now() * 0.001;
+
+if (g._spin360Busy) return; // don’t retrigger mid-spin
+if (g._spin360CooldownUntil && now < g._spin360CooldownUntil) return;
+
+g._spin360Busy = true;
+
+gsap.to(g, {
+  _spin360Add: g._spin360Add + add,
+  duration: dur,
+  ease,
+  overwrite: true,
+  onComplete: () => {
+    g._spin360Busy = false;
+    g._spin360CooldownUntil = ( _fxTime || performance.now()*0.001 ) + SPIN360_RETRIGGER_COOLDOWN;
+
+    if (Math.abs(g._spin360Add) > Math.PI * 50) {
+      g._spin360Add = g._spin360Add % (Math.PI * 2);
+    }
+  },
+});
+
 }
 
 
@@ -2125,22 +2139,30 @@ if (hoverMode === "spin360") {
   const allowed = _hoverStrength >= minHoverF;
 
   if (allowed && idx >= 0) {
-    if (idx !== _hoveredGlyphIdx) {
-      // reset previous hovered glyph
-      if (_hoveredGlyphIdx >= 0) {
-        _spin360Reset(glyphs[_hoveredGlyphIdx]);
-      }
+    _spin360MissFrames = 0;
 
+    if (idx !== _hoveredGlyphIdx) {
+      if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
       _hoveredGlyphIdx = idx;
       _spin360Trigger(glyphs[idx]);
     }
   } else {
-    // hover exited all glyphs
-    if (_hoveredGlyphIdx >= 0) {
-      _spin360Reset(glyphs[_hoveredGlyphIdx]);
+    // don’t instantly reset; require consecutive misses
+    _spin360MissFrames++;
+
+    if (_spin360MissFrames >= SPIN360_MISS_FRAMES_BEFORE_RESET) {
+      if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
+      _hoveredGlyphIdx = -1;
+      _spin360MissFrames = 0;
     }
-    _hoveredGlyphIdx = -1;
   }
+} else {
+  _spin360MissFrames = 0;
+
+  if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
+  _hoveredGlyphIdx = -1;
+}
+
 } else {
   // leaving spin360 mode entirely
   if (_hoveredGlyphIdx >= 0) {
@@ -2404,5 +2426,6 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 

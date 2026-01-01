@@ -2,7 +2,7 @@
 (function () {
   const TAG = "[3DType/UI]";
   const UI_VERSION =
-    "ui_v13_spin360RaycastEnter360 + explodeAxis+shapeControls";
+    "ui_v14_explodeShapeControls + explodeAxis + spin360EnterRaycast";
   console.log(TAG, UI_VERSION);
   window.__WF_3DTYPE_UI_VERSION__ = UI_VERSION;
 
@@ -62,7 +62,8 @@
 
   function waitForPaneLayoutReady() {
     return wait(() => {
-      const host = document.getElementById("pane-inner") || document.getElementById("pane");
+      const host =
+        document.getElementById("pane-inner") || document.getElementById("pane");
       if (!host) return false;
       const r = host.getBoundingClientRect();
       return r.height > 40;
@@ -129,14 +130,21 @@
       // Anim tuning
       ensureParam(params, "animSpinDeg", 360);
 
+      // Explode (upgraded axis controls + shape controls)
       ensureParam(params, "animExplodeAmount", 220);
       ensureParam(params, "animExplodeDiameterX", 1.0);
       ensureParam(params, "animExplodeDiameterY", 1.0);
+      ensureParam(params, "animExplodeDiameter", 1.0); // NEW master
       ensureParam(params, "animExplodeAngleOffset", 0);
       ensureParam(params, "animExplodeZAmount", 0);
+      ensureParam(params, "animExplodeZSpread", 0.0); // NEW
       ensureParam(params, "animExplodeRotDeg", 55);
       ensureParam(params, "animExplodeRotAxis", "z");
       ensureParam(params, "animExplodeRandomDir", true);
+
+      ensureParam(params, "animExplodeShape", "burst"); // NEW
+      ensureParam(params, "animExplodeRingAngle", 0); // NEW
+      ensureParam(params, "animExplodeNoise", 0.15); // NEW
 
       // Hover tuning
       ensureParam(params, "hoverSpinDeg", 120);
@@ -159,7 +167,9 @@
       const Pane = window.Tweakpane.Pane;
       const pane = new Pane({ container: root, title: "Controls" });
 
-      const tab = pane.addTab({ pages: [{ title: "Type" }, { title: "Look" }, { title: "Motion" }] });
+      const tab = pane.addTab({
+        pages: [{ title: "Type" }, { title: "Look" }, { title: "Motion" }],
+      });
       const tType = tab.pages[0];
       const tLook = tab.pages[1];
       const tMotion = tab.pages[2];
@@ -206,7 +216,8 @@
       // TAB RESCUE
       // =========================================================
       function getTabButtons() {
-        const row = root.querySelector(".tp-tbv_t") || root.querySelector("[class*='tbv_t']");
+        const row =
+          root.querySelector(".tp-tbv_t") || root.querySelector("[class*='tbv_t']");
         if (!row) return [];
         return Array.from(row.querySelectorAll("button"));
       }
@@ -253,7 +264,9 @@
       function attachRescueToTabClicks() {
         const btns = getTabButtons();
         btns.forEach((b) => {
-          b.addEventListener("click", () => setTimeout(rescueCheck, 0), { passive: true });
+          b.addEventListener("click", () => setTimeout(rescueCheck, 0), {
+            passive: true,
+          });
         });
         setTimeout(rescueCheck, 80);
       }
@@ -264,7 +277,14 @@
       const fCanvas = tType.addFolder({ title: "Canvas" });
       fCanvas.addBinding(params, "aspect", {
         label: "ratio",
-        options: { Free: "free", "1:1": "1:1", "4:5": "4:5", "9:16": "9:16", "9:18": "9:18", "16:9": "16:9" },
+        options: {
+          Free: "free",
+          "1:1": "1:1",
+          "4:5": "4:5",
+          "9:16": "9:16",
+          "9:18": "9:18",
+          "16:9": "16:9",
+        },
       });
       fCanvas.addBinding(params, "margin", { label: "margin", min: 0, max: 64, step: 1 });
 
@@ -312,8 +332,14 @@
         params.fontPreset = presetKeys[0];
       }
 
-      const bSource = fFont.addBinding(params, "fontSource", { label: "source", options: { Preset: "preset", URL: "url", Upload: "upload" } });
-      const bPreset = fFont.addBinding(params, "fontPreset", { label: "preset", options: presetOptions });
+      const bSource = fFont.addBinding(params, "fontSource", {
+        label: "source",
+        options: { Preset: "preset", URL: "url", Upload: "upload" },
+      });
+      const bPreset = fFont.addBinding(params, "fontPreset", {
+        label: "preset",
+        options: presetOptions,
+      });
       const bUrl = fFont.addBinding(params, "fontUrl", { label: "url" });
 
       const uploadWrap = document.createElement("div");
@@ -381,7 +407,9 @@
 
           if (!obj || !obj.glyphs) {
             console.warn(TAG, "Not a THREE typeface JSON. Keys:", Object.keys(obj || {}));
-            alert("This JSON is not a THREE typeface font (missing 'glyphs'). Convert the font to .typeface.json first.");
+            alert(
+              "This JSON is not a THREE typeface font (missing 'glyphs'). Convert the font to .typeface.json first."
+            );
             return;
           }
 
@@ -415,9 +443,21 @@
       const fTypeControls = tType.addFolder({ title: "Typography" });
       fTypeControls.addBinding(params, "size", { min: 12, max: 140, step: 1 });
       fTypeControls.addBinding(params, "depth", { min: 0, max: 240, step: 1 });
-      fTypeControls.addBinding(params, "charSpacing", { label: "char spacing", min: -30, max: 80, step: 1 });
-      fTypeControls.addBinding(params, "lineSpacing", { label: "line spacing", min: 0.8, max: 2.5, step: 0.01 });
-      fTypeControls.addBinding(params, "align", { options: { Center: "center", Left: "left", Right: "right" } });
+      fTypeControls.addBinding(params, "charSpacing", {
+        label: "char spacing",
+        min: -30,
+        max: 80,
+        step: 1,
+      });
+      fTypeControls.addBinding(params, "lineSpacing", {
+        label: "line spacing",
+        min: 0.8,
+        max: 2.5,
+        step: 0.01,
+      });
+      fTypeControls.addBinding(params, "align", {
+        options: { Center: "center", Left: "left", Right: "right" },
+      });
 
       // ---------------------------
       // Per-letter Z
@@ -475,7 +515,12 @@
           return;
         }
         for (let i = 0; i < n; i++) {
-          const b = fCharZ.addBinding(zProxy, "c" + i, { label: String(i + 1), min: ZMIN, max: ZMAX, step: ZSTEP });
+          const b = fCharZ.addBinding(zProxy, "c" + i, {
+            label: String(i + 1),
+            min: ZMIN,
+            max: ZMAX,
+            step: ZSTEP,
+          });
           b.on("change", () => {
             syncParamsFromProxy();
             window.__applyCharZOffsets();
@@ -489,7 +534,8 @@
         const n = params.charZOffsets.length;
         if (n <= 1) return;
         const span = 120;
-        for (let i = 0; i < n; i++) params.charZOffsets[i] = Math.round(lerp(-span, span, i / (n - 1)));
+        for (let i = 0; i < n; i++)
+          params.charZOffsets[i] = Math.round(lerp(-span, span, i / (n - 1)));
         syncProxyFromParams();
         zBindings.forEach((b) => b.refresh());
         window.__applyCharZOffsets();
@@ -504,7 +550,8 @@
       fCharZ.addButton({ title: "Random" }).on("click", () => {
         ensureZArray();
         const span = 140;
-        for (let i = 0; i < params.charZOffsets.length; i++) params.charZOffsets[i] = Math.round((Math.random() * 2 - 1) * span);
+        for (let i = 0; i < params.charZOffsets.length; i++)
+          params.charZOffsets[i] = Math.round((Math.random() * 2 - 1) * span);
         syncProxyFromParams();
         zBindings.forEach((b) => b.refresh());
         window.__applyCharZOffsets();
@@ -517,14 +564,30 @@
       // ---------------------------
       const fBg = tLook.addFolder({ title: "Background" });
 
-      const bBgMode = fBg.addBinding(params, "bgMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient" } });
-      const bBgSolid = fBg.addBinding(params, "bgSolid", { label: "solid", view: "color" });
+      const bBgMode = fBg.addBinding(params, "bgMode", {
+        label: "mode",
+        options: { Solid: "solid", Gradient: "gradient" },
+      });
+      const bBgSolid = fBg.addBinding(params, "bgSolid", {
+        label: "solid",
+        view: "color",
+      });
 
       const fBgGrad = fBg.addFolder({ title: "Gradient" });
       const bBgGradA = fBgGrad.addBinding(params, "bgGradA", { label: "A", view: "color" });
       const bBgGradB = fBgGrad.addBinding(params, "bgGradB", { label: "B", view: "color" });
-      const bBgGradAngle = fBgGrad.addBinding(params, "bgGradAngle", { label: "angle", min: 0, max: 360, step: 1 });
-      const bBgGradSoft = fBgGrad.addBinding(params, "bgGradSoft", { label: "soft", min: 0, max: 1, step: 0.01 });
+      const bBgGradAngle = fBgGrad.addBinding(params, "bgGradAngle", {
+        label: "angle",
+        min: 0,
+        max: 360,
+        step: 1,
+      });
+      const bBgGradSoft = fBgGrad.addBinding(params, "bgGradSoft", {
+        label: "soft",
+        min: 0,
+        max: 1,
+        step: 0.01,
+      });
 
       function refreshBgUI() {
         const m = params.bgMode;
@@ -551,9 +614,20 @@
       const fFill = tLook.addFolder({ title: "Fill" });
       const fFace = fFill.addFolder({ title: "Faces" });
 
-      const bFaceMode = fFace.addBinding(params, "faceMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient", Checker: "checker", "Per Letter": "perLetter" } });
+      const bFaceMode = fFace.addBinding(params, "faceMode", {
+        label: "mode",
+        options: {
+          Solid: "solid",
+          Gradient: "gradient",
+          Checker: "checker",
+          "Per Letter": "perLetter",
+        },
+      });
 
-      const bFaceUV = fFace.addBinding(params, "faceUVSpace", { label: "UV", options: { Glyph: "glyph", World: "world" } });
+      const bFaceUV = fFace.addBinding(params, "faceUVSpace", {
+        label: "UV",
+        options: { Glyph: "glyph", World: "world" },
+      });
 
       const bFaceSolid = fFace.addBinding(params, "faceSolid", { view: "color" });
 
@@ -563,7 +637,10 @@
       const bFaceStopB = fFace.addBinding(params, "faceStopB", { label: "B stop", min: 0, max: 1, step: 0.01 });
       const bFaceGradC = fFace.addBinding(params, "faceGradC", { label: "C", view: "color" });
       const bFaceStopC = fFace.addBinding(params, "faceStopC", { label: "C stop", min: 0, max: 1, step: 0.01 });
-      const bFaceDir = fFace.addBinding(params, "faceGradDir", { label: "dir", options: { Vertical: "vertical", Horizontal: "horizontal", Diagonal: "diagonal" } });
+      const bFaceDir = fFace.addBinding(params, "faceGradDir", {
+        label: "dir",
+        options: { Vertical: "vertical", Horizontal: "horizontal", Diagonal: "diagonal" },
+      });
 
       const fFaceChk = fFace.addFolder({ title: "Face Checker" });
       fFaceChk.addBinding(params, "faceChkScale", { label: "scale", min: 4, max: 200, step: 1 });
@@ -623,7 +700,10 @@
           return;
         }
         for (let i = 0; i < n; i++) {
-          const b = fPerLetter.addBinding(faceProxy, "c" + i, { label: String(i + 1), view: "color" });
+          const b = fPerLetter.addBinding(faceProxy, "c" + i, {
+            label: String(i + 1),
+            view: "color",
+          });
           b.on("change", () => {
             syncFaceParamsFromProxy();
             try {
@@ -665,9 +745,9 @@
         bFaceSolid.element.style.display = m === "solid" ? "" : "none";
 
         const gradOn = m === "gradient";
-        [bFaceGradA, bFaceStopA, bFaceGradB, bFaceStopB, bFaceGradC, bFaceStopC, bFaceDir].forEach((b) => {
-          b.element.style.display = gradOn ? "" : "none";
-        });
+        [bFaceGradA, bFaceStopA, bFaceGradB, bFaceStopB, bFaceGradC, bFaceStopC, bFaceDir].forEach(
+          (b) => (b.element.style.display = gradOn ? "" : "none")
+        );
 
         fFaceChk.element.style.display = m === "checker" ? "" : "none";
         fPerLetter.element.style.display = m === "perLetter" ? "" : "none";
@@ -684,7 +764,10 @@
       fSide.addBinding(params, "sideStopB", { label: "B stop", min: 0, max: 1, step: 0.01 });
       fSide.addBinding(params, "sideGradC", { label: "C", view: "color" });
       fSide.addBinding(params, "sideStopC", { label: "C stop", min: 0, max: 1, step: 0.01 });
-      fSide.addBinding(params, "sideGradDir", { label: "dir", options: { Vertical: "vertical", Horizontal: "horizontal", Diagonal: "diagonal" } });
+      fSide.addBinding(params, "sideGradDir", {
+        label: "dir",
+        options: { Vertical: "vertical", Horizontal: "horizontal", Diagonal: "diagonal" },
+      });
 
       const fGrad = tLook.addFolder({ title: "Gradient Animation" });
       const fFaceGrad = fGrad.addFolder({ title: "Faces" });
@@ -773,10 +856,27 @@
 
       const fExplode = fPresetEx.addFolder({ title: "Explode" });
       fExplode.addBinding(params, "animExplodeAmount", { label: "distance", min: 0, max: 900, step: 5 });
+
+      // Existing ellipse controls
       fExplode.addBinding(params, "animExplodeDiameterX", { label: "diam X", min: 0.1, max: 3, step: 0.01 });
       fExplode.addBinding(params, "animExplodeDiameterY", { label: "diam Y", min: 0.1, max: 3, step: 0.01 });
-      fExplode.addBinding(params, "animExplodeAngleOffset", { label: "angle", min: 0, max: 360, step: 1 });
+
+      // NEW: master + shapes
+      fExplode.addBinding(params, "animExplodeDiameter", { label: "diam master", min: 0, max: 3, step: 0.01 });
+      fExplode.addBinding(params, "animExplodeShape", {
+        label: "shape",
+        options: { Burst: "burst", Ring: "ring", Sphere: "sphere", "Line X": "lineX", "Line Y": "lineY" },
+      });
+      fExplode.addBinding(params, "animExplodeRingAngle", { label: "ring angle", min: 0, max: 360, step: 1 });
+      fExplode.addBinding(params, "animExplodeNoise", { label: "noise", min: 0, max: 1, step: 0.01 });
+
+      fExplode.addBinding(params, "animExplodeAngleOffset", { label: "field angle", min: 0, max: 360, step: 1 });
       fExplode.addBinding(params, "animExplodeZAmount", { label: "Z amt", min: -400, max: 400, step: 1 });
+
+      // NEW: extra Z spread (sphere-ish)
+      fExplode.addBinding(params, "animExplodeZSpread", { label: "Z spread", min: 0, max: 2, step: 0.01 });
+
+      // Rotation axis controls
       fExplode.addBinding(params, "animExplodeRotDeg", { label: "rot deg", min: 0, max: 720, step: 5 });
       fExplode.addBinding(params, "animExplodeRotAxis", { label: "rot axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
       fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
@@ -852,8 +952,16 @@
       fHover360.addBinding(params, "hoverSpin360MinHoverF", { label: "min hover", min: 0, max: 1, step: 0.01 });
       fHover360.addBinding(params, "hoverSpin360Lift", { label: "lift %", min: 0, max: 0.6, step: 0.01 });
 
-      fHover.addBinding(params, "proximityFalloff", { label: "falloff", options: { linear: "linear", quadratic: "quadratic", smooth: "smooth" } });
-      fHover.addBinding(params, "cursorSmoothing", { label: "cursor smooth", min: 0, max: 0.98, step: 0.01 });
+      fHover.addBinding(params, "proximityFalloff", {
+        label: "falloff",
+        options: { linear: "linear", quadratic: "quadratic", smooth: "smooth" },
+      });
+      fHover.addBinding(params, "cursorSmoothing", {
+        label: "cursor smooth",
+        min: 0,
+        max: 0.98,
+        step: 0.01,
+      });
       fHover.addBinding(params, "liftSmoothing", { label: "smooth", min: 0.01, max: 0.6, step: 0.01 });
 
       const fRepel = fHover.addFolder({ title: "Repel" });
@@ -961,8 +1069,13 @@
         "animExplodeAmount",
         "animExplodeDiameterX",
         "animExplodeDiameterY",
+        "animExplodeDiameter", // NEW
+        "animExplodeShape", // NEW
+        "animExplodeRingAngle", // NEW
+        "animExplodeNoise", // NEW
         "animExplodeAngleOffset",
         "animExplodeZAmount",
+        "animExplodeZSpread", // NEW
         "animExplodeRotDeg",
         "animExplodeRotAxis",
         "animExplodeRandomDir",
@@ -1000,7 +1113,14 @@
         "hoverSpin360Lift",
       ]);
 
-      const GRAD_ANIM_KEYS = new Set(["faceGradAnimOn", "faceGradSpeed", "faceGradAngle", "sideGradAnimOn", "sideGradSpeed", "sideGradAngle"]);
+      const GRAD_ANIM_KEYS = new Set([
+        "faceGradAnimOn",
+        "faceGradSpeed",
+        "faceGradAngle",
+        "sideGradAnimOn",
+        "sideGradSpeed",
+        "sideGradAngle",
+      ]);
 
       pane.on("change", (ev) => {
         const k = ev?.target?.key;
@@ -1017,7 +1137,14 @@
           }, 0);
         }
 
-        if (k === "bgMode" || k === "bgSolid" || k === "bgGradA" || k === "bgGradB" || k === "bgGradAngle" || k === "bgGradSoft") {
+        if (
+          k === "bgMode" ||
+          k === "bgSolid" ||
+          k === "bgGradA" ||
+          k === "bgGradB" ||
+          k === "bgGradAngle" ||
+          k === "bgGradSoft"
+        ) {
           refreshBgUI();
           rebuildBg();
           return;

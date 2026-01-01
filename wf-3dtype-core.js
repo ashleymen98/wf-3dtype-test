@@ -1,4 +1,4 @@
-// wf-3dtype-core.js
+// wf-3dtype-core.js (v14)
 // IMPORTANT: this file is a module. Load with <script type="module" src="..."></script>
 
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
@@ -14,7 +14,7 @@ const gsap = window.gsap;
 // Version stamp
 // ---------------------------
 const CORE_VERSION =
-  "core_v13_spin360RaycastEnter360 + explodeAxis+shapeControls";
+  "core_v14_spin360RaycastEnter360 + explodeShape(diamMaster/ringAngle/noise/zSpread)";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
 
@@ -154,15 +154,30 @@ const params = (window.params ||= {
 
   animSpinDeg: 360,
 
-  // Explode preset (upgraded)
-  animExplodeAmount: 220,      // base distance
-  animExplodeDiameterX: 1.0,   // ellipse scale X
-  animExplodeDiameterY: 1.0,   // ellipse scale Y
-  animExplodeAngleOffset: 0,   // rotate the burst field
-  animExplodeZAmount: 0,       // add depth scatter in Z (world)
-  animExplodeRotDeg: 55,       // per-char rotation during explode
-  animExplodeRotAxis: "z",     // x|y|z|random
-  animExplodeRandomDir: true,  // random +/- direction for explode rotation
+  // Explode preset (v14 upgraded)
+  animExplodeAmount: 220, // base distance
+
+  // legacy ellipse scalers (kept)
+  animExplodeDiameterX: 1.0,
+  animExplodeDiameterY: 1.0,
+
+  // NEW master diameter scaler
+  animExplodeDiameter: 1.0,
+
+  // NEW shape controls
+  animExplodeShape: "burst", // burst | ring | sphere | lineX | lineY
+  animExplodeRingAngle: 0, // deg (only for ring)
+  animExplodeNoise: 0.15, // 0..1 (random per glyph)
+
+  // field rotation + Z scatter
+  animExplodeAngleOffset: 0, // deg rotate burst field
+  animExplodeZAmount: 0, // add depth scatter in Z (world)
+  animExplodeZSpread: 0.0, // extra sphere Z spread (0..~1)
+
+  // per-char rotation during explode
+  animExplodeRotDeg: 55,
+  animExplodeRotAxis: "z", // x|y|z|random
+  animExplodeRandomDir: true, // random +/- direction for explode rotation
 
   // Hover
   hoverMode: "lift", // lift | rotate | tilt | pulse | repel | spin | spin360 | explode | none
@@ -183,16 +198,16 @@ const params = (window.params ||= {
   hoverSpinRandomAmount: false,
   hoverSpinAmountJitter: 0.35, // 0..1
 
-  // Hover Spin360 (FIXED: raycast + full 360 on enter + inertia via speed->duration)
-  hoverSpin360Axis: "random",      // x|y|z|random
-  hoverSpin360RandomDir: true,     // stable per-glyph +/- sign
-  hoverSpin360BaseDur: 0.55,       // seconds at slow movement
-  hoverSpin360SpeedScale: 0.0045,  // higher = faster cursor -> much shorter duration
+  // Hover Spin360 (raycast + full 360 on enter + inertia via speed->duration)
+  hoverSpin360Axis: "random", // x|y|z|random
+  hoverSpin360RandomDir: true, // stable per-glyph +/- sign
+  hoverSpin360BaseDur: 0.55, // seconds at slow movement
+  hoverSpin360SpeedScale: 0.0045, // higher = faster cursor -> much shorter duration
   hoverSpin360MinDur: 0.12,
   hoverSpin360MaxDur: 0.9,
   hoverSpin360Ease: "power3.out",
-  hoverSpin360MinHoverF: 0.20,     // gate (prevents off-text triggers)
-  hoverSpin360Lift: 0.12,          // small lift (fraction of proximity lift)
+  hoverSpin360MinHoverF: 0.20, // gate (prevents off-text triggers)
+  hoverSpin360Lift: 0.12, // small lift (fraction of proximity lift)
 
   hoverExplodeAmount: 120,
   hoverExplodeTwistDeg: 35,
@@ -267,12 +282,13 @@ ensureParam("hoverSpin360Boost", 0.018);
 ensureParam("hoverSpin360MaxVel", 10.0);
 ensureParam("hoverSpin360Damping", 7.5);
 
-// New defaults
+// New defaults (spin)
 ensureParam("hoverSpinAxis", "z");
 ensureParam("hoverSpinRandomDir", true);
 ensureParam("hoverSpinRandomAmount", false);
 ensureParam("hoverSpinAmountJitter", 0.35);
 
+// Spin360 defaults
 ensureParam("hoverSpin360Axis", "random");
 ensureParam("hoverSpin360RandomDir", true);
 ensureParam("hoverSpin360BaseDur", 0.55);
@@ -283,8 +299,16 @@ ensureParam("hoverSpin360Ease", "power3.out");
 ensureParam("hoverSpin360MinHoverF", 0.2);
 ensureParam("hoverSpin360Lift", 0.12);
 
+// Explode (v14) defaults
 ensureParam("animExplodeDiameterX", 1.0);
 ensureParam("animExplodeDiameterY", 1.0);
+ensureParam("animExplodeDiameter", 1.0); // NEW master
+
+ensureParam("animExplodeShape", "burst"); // NEW
+ensureParam("animExplodeRingAngle", 0); // NEW
+ensureParam("animExplodeNoise", 0.15); // NEW
+ensureParam("animExplodeZSpread", 0.0); // NEW
+
 ensureParam("animExplodeAngleOffset", 0);
 ensureParam("animExplodeZAmount", 0);
 ensureParam("animExplodeRotDeg", 55);
@@ -1406,11 +1430,14 @@ function buildText() {
       // Tag mesh for hover picking
       mesh.userData.__glyphIndex = idx;
 
-      // Explosion direction seed (unit circle, stable)
+      // Explosion direction seed (stable)
       const a0 = hash01(idx + 17) * Math.PI * 2;
+
+      // For hover explode (kept)
       const mag = 0.6 + 0.4 * hash01(idx + 91);
       const exu = Math.cos(a0) * mag;
       const eyu = Math.sin(a0) * mag;
+
       const ezj = stableJitter(idx + 2027);
 
       const entry = {
@@ -1448,18 +1475,16 @@ function buildText() {
         animRotZ: 0,
         animScale: 1,
 
-        // explode direction
-        _expU: a0,
-        _expX: exu,
-        _expY: eyu,
-        _expZ: ezj,
+        // explode seeds
+        _expU: a0,       // main stable angle
+        _expX: exu,      // used by hover explode
+        _expY: eyu,      // used by hover explode
+        _expZ: ezj,      // stable z jitter
+        _spinJitter: stableJitter(idx), // stable noise driver
 
-        // hover spin360 additive (GSAP animates THIS, not rotations directly)
+        // hover spin360 additive
         _spin360Axis: stablePickAxis(idx, params.hoverSpin360Axis, true),
         _spin360Add: 0,
-
-        // spin (simple) stable jitter
-        _spinJitter: stableJitter(idx),
       };
 
       _updateDepth(entry);
@@ -1531,10 +1556,17 @@ async function setFontFromUrl(url) {
   const u = String(url || "").trim();
   if (!u) return;
   try {
-    await new Promise((res, rej) => fontLoader.load(u, (f) => {
-      font = f;
-      res();
-    }, undefined, rej));
+    await new Promise((res, rej) =>
+      fontLoader.load(
+        u,
+        (f) => {
+          font = f;
+          res();
+        },
+        undefined,
+        rej
+      )
+    );
     buildText();
     if (window.__tp_animPlaying) playAnimation();
   } catch (e) {
@@ -1670,12 +1702,20 @@ function playAnimation() {
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
 
-  // Explode tuning (new)
+  // Explode tuning (v14)
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
+
   const exDX = Math.max(0.01, Number(params.animExplodeDiameterX ?? 1));
   const exDY = Math.max(0.01, Number(params.animExplodeDiameterY ?? 1));
+  const exD = Math.max(0.0, Number(params.animExplodeDiameter ?? 1.0)); // master
+
+  const exShape = String(params.animExplodeShape || "burst").toLowerCase();
+  const exRingAng = THREE.MathUtils.degToRad(Number(params.animExplodeRingAngle ?? 0));
+  const exNoise = clamp01(Number(params.animExplodeNoise ?? 0.15));
+
   const exAng = THREE.MathUtils.degToRad(Number(params.animExplodeAngleOffset ?? 0));
   const exZ = Number(params.animExplodeZAmount ?? 0);
+  const exZSpread = Number(params.animExplodeZSpread ?? 0.0);
 
   const exRotAxisBase = String(params.animExplodeRotAxis || "z").toLowerCase();
   const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
@@ -1692,15 +1732,52 @@ function playAnimation() {
       let asc = 1;
 
       if (p.ex && p.ex !== 0) {
-        // rotate burst field by offset
-        const a = (m._expU || 0) + exAng;
-        const ux = Math.cos(a) * (m._expX ? Math.sign(m._expX) * Math.abs(m._expX) : 1);
-        const uy = Math.sin(a) * (m._expY ? Math.sign(m._expY) * Math.abs(m._expY) : 1);
+        // Stable base angle + field rotation
+        const a0 = (m._expU || 0) + exAng;
 
-        // ellipse scaling
-        ox += ux * explodeAmt * exDX * p.ex;
-        oy += uy * explodeAmt * exDY * p.ex;
-        oz += (m._expZ || 0) * exZ * p.ex;
+        // Direction
+        let dx = Math.cos(a0);
+        let dy = Math.sin(a0);
+
+        // Per-glyph noise on radius
+        const n = 1 + (m._spinJitter || 0) * exNoise;
+
+        // Ellipse scaling (with master diameter)
+        let sx = exDX * exD * n;
+        let sy = exDY * exD * n;
+
+        // Z seed
+        const zSeed = (m._expZ || 0);
+
+        // Shape variants
+        if (exShape === "ring") {
+          // rotate direction around ring angle (independent control)
+          const c = Math.cos(exRingAng),
+            s = Math.sin(exRingAng);
+          const rx2 = dx * c - dy * s;
+          const ry2 = dx * s + dy * c;
+          dx = rx2;
+          dy = ry2;
+          // ring stays on plane unless ZAmount explicitly used below
+        } else if (exShape === "sphere") {
+          // sphere adds extra Z spread (scaled by explodeAmt for predictable feel)
+          oz += zSeed * (explodeAmt * exZSpread) * p.ex;
+        } else if (exShape === "linex") {
+          dx = Math.sign(dx || 1);
+          dy = 0;
+          sy = 0;
+        } else if (exShape === "liney") {
+          dx = 0;
+          dy = Math.sign(dy || 1);
+          sx = 0;
+        } // burst default
+
+        // Position offsets
+        ox += dx * explodeAmt * sx * p.ex;
+        oy += dy * explodeAmt * sy * p.ex;
+
+        // Z scatter (optional, works for all shapes)
+        oz += zSeed * exZ * p.ex;
 
         // per-char rotation on chosen/random axis
         let ax = exRotAxisBase;
@@ -1918,7 +1995,9 @@ function resetHoverTransforms() {
 
     const add = g._spin360Add || 0;
     let ax = spin360AxisBase;
-    if (ax === "random") ax = g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
+    if (ax === "random")
+      ax =
+        g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
     if (add !== 0) {
       if (ax === "x") brx += add;
       else if (ax === "y") bry += add;
@@ -2131,11 +2210,13 @@ function updateHoverEffects() {
       ty += lift * 0.25 * f;
     }
 
-    // Apply additive spin360 rotation ALWAYS (so preset animation + hover + spin360 layer properly)
+    // Apply additive spin360 rotation ALWAYS
     const add = g._spin360Add || 0;
     if (add !== 0) {
       let ax = spin360AxisBase;
-      if (ax === "random") ax = g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
+      if (ax === "random")
+        ax =
+          g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
       if (ax === "x") rx += add;
       else if (ax === "y") ry += add;
       else rz += add;

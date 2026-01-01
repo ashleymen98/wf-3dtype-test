@@ -14,7 +14,7 @@ const gsap = window.gsap;
 // Version stamp
 // ---------------------------
 const CORE_VERSION =
-  "core_v12_spin360Inertia + perLetterFace + bgNoChecker + faceCheckerWorldUV";
+  "core_v13_spin360RaycastEnter360 + explodeAxis+shapeControls";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
 
@@ -93,7 +93,7 @@ const params = (window.params ||= {
 
   // Face Fill (solid | gradient | checker | perLetter)
   faceMode: "gradient",
-  faceUVSpace: "glyph", // glyph | world (note: checker will FORCE world for consistency)
+  faceUVSpace: "glyph", // glyph | world (checker forces world)
   faceSolid: "#ff0000",
   faceGradA: "#ff0055",
   faceGradB: "#00ffcc",
@@ -106,7 +106,7 @@ const params = (window.params ||= {
   // Per-letter face colors
   faceLetterColors: [],
 
-  // Face Checker controls (now consistent across letters via WORLD UV)
+  // Face Checker controls (consistent across letters via WORLD UV)
   faceChkScale: 42,
   faceChkLineWidth: 3,
   faceChkRotate: 0,
@@ -153,8 +153,16 @@ const params = (window.params ||= {
   animAxis: "y",
 
   animSpinDeg: 360,
-  animExplodeAmount: 220,
-  animExplodeTwistDeg: 45,
+
+  // Explode preset (upgraded)
+  animExplodeAmount: 220,      // base distance
+  animExplodeDiameterX: 1.0,   // ellipse scale X
+  animExplodeDiameterY: 1.0,   // ellipse scale Y
+  animExplodeAngleOffset: 0,   // rotate the burst field
+  animExplodeZAmount: 0,       // add depth scatter in Z (world)
+  animExplodeRotDeg: 55,       // per-char rotation during explode
+  animExplodeRotAxis: "z",     // x|y|z|random
+  animExplodeRandomDir: true,  // random +/- direction for explode rotation
 
   // Hover
   hoverMode: "lift", // lift | rotate | tilt | pulse | repel | spin | spin360 | explode | none
@@ -175,12 +183,16 @@ const params = (window.params ||= {
   hoverSpinRandomAmount: false,
   hoverSpinAmountJitter: 0.35, // 0..1
 
-  // New Hover: spin360 inertia
-  hoverSpin360Axis: "random", // x|y|z|random
-  hoverSpin360RandomDir: true,
-  hoverSpin360Boost: 0.018, // impulse per (cursorSpeed * f)
-  hoverSpin360MaxVel: 10.0, // rad/sec cap
-  hoverSpin360Damping: 7.5, // higher = stops sooner
+  // Hover Spin360 (FIXED: raycast + full 360 on enter + inertia via speed->duration)
+  hoverSpin360Axis: "random",      // x|y|z|random
+  hoverSpin360RandomDir: true,     // stable per-glyph +/- sign
+  hoverSpin360BaseDur: 0.55,       // seconds at slow movement
+  hoverSpin360SpeedScale: 0.0045,  // higher = faster cursor -> much shorter duration
+  hoverSpin360MinDur: 0.12,
+  hoverSpin360MaxDur: 0.9,
+  hoverSpin360Ease: "power3.out",
+  hoverSpin360MinHoverF: 0.20,     // gate (prevents off-text triggers)
+  hoverSpin360Lift: 0.12,          // small lift (fraction of proximity lift)
 
   hoverExplodeAmount: 120,
   hoverExplodeTwistDeg: 35,
@@ -249,6 +261,13 @@ const params = (window.params ||= {
 function ensureParam(key, val) {
   if (!(key in params)) params[key] = val;
 }
+
+// Keep older keys safe if they existed in saved params (no longer used)
+ensureParam("hoverSpin360Boost", 0.018);
+ensureParam("hoverSpin360MaxVel", 10.0);
+ensureParam("hoverSpin360Damping", 7.5);
+
+// New defaults
 ensureParam("hoverSpinAxis", "z");
 ensureParam("hoverSpinRandomDir", true);
 ensureParam("hoverSpinRandomAmount", false);
@@ -256,9 +275,21 @@ ensureParam("hoverSpinAmountJitter", 0.35);
 
 ensureParam("hoverSpin360Axis", "random");
 ensureParam("hoverSpin360RandomDir", true);
-ensureParam("hoverSpin360Boost", 0.018);
-ensureParam("hoverSpin360MaxVel", 10.0);
-ensureParam("hoverSpin360Damping", 7.5);
+ensureParam("hoverSpin360BaseDur", 0.55);
+ensureParam("hoverSpin360SpeedScale", 0.0045);
+ensureParam("hoverSpin360MinDur", 0.12);
+ensureParam("hoverSpin360MaxDur", 0.9);
+ensureParam("hoverSpin360Ease", "power3.out");
+ensureParam("hoverSpin360MinHoverF", 0.2);
+ensureParam("hoverSpin360Lift", 0.12);
+
+ensureParam("animExplodeDiameterX", 1.0);
+ensureParam("animExplodeDiameterY", 1.0);
+ensureParam("animExplodeAngleOffset", 0);
+ensureParam("animExplodeZAmount", 0);
+ensureParam("animExplodeRotDeg", 55);
+ensureParam("animExplodeRotAxis", "z");
+ensureParam("animExplodeRandomDir", true);
 
 ensureParam("faceLetterColors", []);
 
@@ -312,7 +343,6 @@ function stablePickAxis(idx, baseAxis, allowRandom) {
   let ax = String(baseAxis || "z").toLowerCase();
   if (ax !== "random" && !allowRandom) return ax;
   if (ax !== "random" && allowRandom === false) return ax;
-  // stable random
   const u = hash01(idx + 77);
   return u < 0.333 ? "x" : u < 0.666 ? "y" : "z";
 }
@@ -409,7 +439,6 @@ function makeBackgroundTexture() {
     ctx.fillStyle = params.bgSolid || "#111";
     ctx.fillRect(0, 0, size, size);
   } else {
-    // gradient
     const a = params.bgGradA || "#111";
     const b = params.bgGradB || "#222";
     const ang = (Number(params.bgGradAngle || 0) * Math.PI) / 180;
@@ -518,7 +547,7 @@ function makeFaceCheckerTexture() {
 }
 
 // ---------------------------
-// FX shader hook (unchanged from your current core)
+// FX shader hook (unchanged)
 // ---------------------------
 const _hash21 = `float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}`;
 const _noise = `float noise2(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));vec2 u=f*f*(3.-2.*f);return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y;}`;
@@ -552,7 +581,6 @@ function _applyFX(mat, isFace) {
     s.uniforms.uGrainScale = { value: 220 };
     s.uniforms.uGrainSpeed = { value: 0.35 };
 
-    // Heat bloom
     s.uniforms.uHeatOn = { value: 0 };
     s.uniforms.uHeatPos = { value: new THREE.Vector3(0, 0, 0) };
     s.uniforms.uHeatRadius = { value: 160 };
@@ -904,7 +932,6 @@ function rebuildFillMaterials() {
     color: sideTex ? new THREE.Color(0xffffff) : srgbColor(params.sideSolid),
   };
 
-  // Base faceMat used for non-perLetter
   if (params.lightingMode === "accurate") {
     faceMat = new THREE.MeshBasicMaterial(faceCommon);
     sideMat = new THREE.MeshStandardMaterial({ ...sideCommon, metalness: 0, roughness: 0.9 });
@@ -1258,14 +1285,12 @@ function _applyPerLetterFaceMats() {
     const g = glyphs[i];
     const col = params.faceLetterColors[i] || "#ffffff";
 
-    // dispose previous per-letter face mat if any
     if (g._faceMatLocal && g._faceMatLocal !== faceMat) {
       try {
         g._faceMatLocal.dispose?.();
       } catch (e) {}
     }
 
-    // build new face material per glyph
     let m;
     if (params.lightingMode === "accurate") {
       m = new THREE.MeshBasicMaterial({ color: srgbColor(col) });
@@ -1278,7 +1303,6 @@ function _applyPerLetterFaceMats() {
 
     g._faceMatLocal = m;
 
-    // mesh.material is [face, side]
     if (Array.isArray(g.mesh.material)) g.mesh.material[0] = m;
     else g.mesh.material = [m, g.mesh.material];
   }
@@ -1379,11 +1403,15 @@ function buildText() {
 
       const idx = globalGlyphIndex;
 
-      // stable random direction per glyph (explode/hover)
-      const a = hash01(idx + 17) * Math.PI * 2;
+      // Tag mesh for hover picking
+      mesh.userData.__glyphIndex = idx;
+
+      // Explosion direction seed (unit circle, stable)
+      const a0 = hash01(idx + 17) * Math.PI * 2;
       const mag = 0.6 + 0.4 * hash01(idx + 91);
-      const rx = Math.cos(a) * mag;
-      const ry = Math.sin(a) * mag;
+      const exu = Math.cos(a0) * mag;
+      const eyu = Math.sin(a0) * mag;
+      const ezj = stableJitter(idx + 2027);
 
       const entry = {
         group,
@@ -1421,14 +1449,14 @@ function buildText() {
         animScale: 1,
 
         // explode direction
-        _rndX: rx,
-        _rndY: ry,
+        _expU: a0,
+        _expX: exu,
+        _expY: eyu,
+        _expZ: ezj,
 
-        // spin360 inertia state
+        // hover spin360 additive (GSAP animates THIS, not rotations directly)
         _spin360Axis: stablePickAxis(idx, params.hoverSpin360Axis, true),
-        _spin360Dir: stablePickSign(idx, !!params.hoverSpin360RandomDir),
-        _spin360Angle: 0,
-        _spin360Vel: 0,
+        _spin360Add: 0,
 
         // spin (simple) stable jitter
         _spinJitter: stableJitter(idx),
@@ -1464,9 +1492,6 @@ function buildText() {
 
   const meshes = glyphs.map((g) => g.mesh);
 
-  // IMPORTANT:
-  // - Face checker is forced WORLD UV for consistent scale across letters.
-  // - Gradient can be glyph/world based on faceUVSpace
   const faceWorld =
     params.faceMode === "checker"
       ? true
@@ -1485,8 +1510,6 @@ function buildText() {
   renderer.compile(scene, camera);
 
   _applyCharZOffsetsFromParams();
-
-  // Apply per-letter face mats if enabled
   _applyPerLetterFaceMats();
 
   try {
@@ -1582,7 +1605,7 @@ window.applyCameraPreset = applyCameraPreset;
 window.reframeToText = reframeToText;
 
 // ---------------------------
-// GSAP Preset Animation (NO CYLINDER)
+// GSAP Preset Animation
 // ---------------------------
 function stopAnimation() {
   if (tl) {
@@ -1608,7 +1631,6 @@ function stopAnimation() {
     _updateDepth(g);
   }
   _applyCharZOffsetsFromParams();
-  // per-letter face mats remain
 }
 window.stopAnimation = stopAnimation;
 
@@ -1647,14 +1669,20 @@ function playAnimation() {
   const inflateAmt = Number(params.animInflate || 0.18);
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
+
+  // Explode tuning (new)
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
-  const explodeTwist = THREE.MathUtils.degToRad(Number(params.animExplodeTwistDeg ?? 45));
+  const exDX = Math.max(0.01, Number(params.animExplodeDiameterX ?? 1));
+  const exDY = Math.max(0.01, Number(params.animExplodeDiameterY ?? 1));
+  const exAng = THREE.MathUtils.degToRad(Number(params.animExplodeAngleOffset ?? 0));
+  const exZ = Number(params.animExplodeZAmount ?? 0);
+
+  const exRotAxisBase = String(params.animExplodeRotAxis || "z").toLowerCase();
+  const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
+  const exRandDir = !!params.animExplodeRandomDir;
 
   function applyProxy(p) {
     for (const m of p.members) {
-      const bx = m.baseGroupX || 0;
-      const by = m.baseGroupY || 0;
-
       let ox = 0,
         oy = 0,
         oz = 0;
@@ -1664,9 +1692,25 @@ function playAnimation() {
       let asc = 1;
 
       if (p.ex && p.ex !== 0) {
-        ox += (m._rndX || 0) * explodeAmt * p.ex;
-        oy += (m._rndY || 0) * explodeAmt * p.ex;
-        arz += (m._rndX || 0) * explodeTwist * p.ex;
+        // rotate burst field by offset
+        const a = (m._expU || 0) + exAng;
+        const ux = Math.cos(a) * (m._expX ? Math.sign(m._expX) * Math.abs(m._expX) : 1);
+        const uy = Math.sin(a) * (m._expY ? Math.sign(m._expY) * Math.abs(m._expY) : 1);
+
+        // ellipse scaling
+        ox += ux * explodeAmt * exDX * p.ex;
+        oy += uy * explodeAmt * exDY * p.ex;
+        oz += (m._expZ || 0) * exZ * p.ex;
+
+        // per-char rotation on chosen/random axis
+        let ax = exRotAxisBase;
+        if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
+        const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
+        const r = exRotRad * dir * p.ex;
+
+        if (ax === "x") arx += r;
+        else if (ax === "y") ary += r;
+        else arz += r;
       }
 
       arx += p.rx || 0;
@@ -1694,6 +1738,8 @@ function playAnimation() {
 
       m.depthF = typeof p.f === "number" ? p.f : 1;
       _updateDepth(m);
+
+      // position offset is handled by hover system; we store anim offsets and apply in hover update
     }
   }
 
@@ -1759,16 +1805,19 @@ function playAnimation() {
 window.playAnimation = playAnimation;
 
 // ---------------------------
-// Hover (adds spin360 inertia mode + upgrades spin axis/random)
+// Hover (Spin360 fixed: raycast enter + full 360)
 // ---------------------------
 let pointerActive = false;
 let pointerNDC = new THREE.Vector2(0, 0);
+
 const cursorLocal = new THREE.Vector3(0, 0, 0);
 const cursorLocalTarget = new THREE.Vector3(0, 0, 0);
 const _cursorDelta = new THREE.Vector3();
 
 let _prevCursorLocal = new THREE.Vector3(0, 0, 0);
-let _cursorSpeed = 0;
+let _cursorSpeed = 0; // smoothed units/sec
+
+let _hoveredGlyphIdx = -1;
 
 function _updatePointerFromEvent(e) {
   const r = renderer.domElement.getBoundingClientRect();
@@ -1788,6 +1837,7 @@ function onPointerEnter(e) {
 function onPointerLeave() {
   pointerActive = false;
   _hoverStrength = 0;
+  _hoveredGlyphIdx = -1;
 }
 
 function getCursorLocalOnTextPlane(outLocal) {
@@ -1801,8 +1851,60 @@ function getCursorLocalOnTextPlane(outLocal) {
   return true;
 }
 
+function _raycastGlyphIndexUnderCursor() {
+  if (!pointerActive || !glyphs.length) return -1;
+  _raycaster.setFromCamera(pointerNDC, camera);
+  const objs = glyphs.map((g) => g.mesh);
+  const hits = _raycaster.intersectObjects(objs, false);
+  if (!hits || !hits.length) return -1;
+  const idx = hits[0]?.object?.userData?.__glyphIndex;
+  return typeof idx === "number" ? idx : -1;
+}
+
+function _spin360Trigger(g) {
+  if (!gsap || !g) return;
+
+  const baseDur = clamp(Number(params.hoverSpin360BaseDur ?? 0.55), 0.05, 4);
+  const spScale = Math.max(0, Number(params.hoverSpin360SpeedScale ?? 0.0045));
+  const minDur = clamp(Number(params.hoverSpin360MinDur ?? 0.12), 0.03, 4);
+  const maxDur = clamp(Number(params.hoverSpin360MaxDur ?? 0.9), 0.03, 4);
+  const ease = params.hoverSpin360Ease || "power3.out";
+
+  // speed -> duration (faster cursor => shorter duration)
+  const sp = clamp(_cursorSpeed, 0, 2000);
+  const dur = clamp(baseDur / (1 + sp * spScale), minDur, maxDur);
+
+  let ax = String(params.hoverSpin360Axis || "z").toLowerCase();
+  if (ax === "random") {
+    if (!g._spin360Axis) g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true);
+    ax = g._spin360Axis;
+  }
+  if (ax !== "x" && ax !== "y" && ax !== "z") ax = "z";
+
+  const dir = stablePickSign(g.overlayIndex || 0, !!params.hoverSpin360RandomDir);
+  const add = Math.PI * 2 * dir;
+
+  // animate additive value, not rotation directly (so it layers with preset animation & hover lerp)
+  gsap.to(g, {
+    _spin360Add: g._spin360Add + add,
+    duration: dur,
+    ease,
+    overwrite: true,
+    onComplete: () => {
+      // keep it bounded (visual is periodic anyway)
+      if (Math.abs(g._spin360Add) > Math.PI * 50) {
+        g._spin360Add = g._spin360Add % (Math.PI * 2);
+      }
+    },
+  });
+}
+
 function resetHoverTransforms() {
   const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
+
+  // axis base for additive spin360 application
+  const spin360AxisBase = String(params.hoverSpin360Axis || "random").toLowerCase();
+
   for (const g of glyphs) {
     const bx = (g.baseGroupX || 0) + (g.animOffsetX || 0);
     const by = (g.baseGroupY || 0) + (g.animOffsetY || 0);
@@ -1810,12 +1912,19 @@ function resetHoverTransforms() {
     g.group.position.x = lerp(g.group.position.x, bx, chase);
     g.group.position.y = lerp(g.group.position.y, by, chase);
 
-    const brx = (g.baseRotX || 0) + (g.animRotX || 0);
-    const bry = (g.baseRotY || 0) + (g.animRotY || 0);
-    const brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
+    let brx = (g.baseRotX || 0) + (g.animRotX || 0);
+    let bry = (g.baseRotY || 0) + (g.animRotY || 0);
+    let brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
 
-    // spin360 inertia still applies even when hover isn’t active: integrate to 0 via damping
-    // (we add it below during updateHoverEffects; here we only reset base)
+    const add = g._spin360Add || 0;
+    let ax = spin360AxisBase;
+    if (ax === "random") ax = g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
+    if (add !== 0) {
+      if (ax === "x") brx += add;
+      else if (ax === "y") bry += add;
+      else brz += add;
+    }
+
     g.group.rotation.x = lerp(g.group.rotation.x, brx, chase);
     g.group.rotation.y = lerp(g.group.rotation.y, bry, chase);
     g.group.rotation.z = lerp(g.group.rotation.z, brz, chase);
@@ -1830,36 +1939,18 @@ function resetHoverTransforms() {
   }
 }
 
-function _integrateSpin360(g, dt) {
-  // damping
-  const damp = Math.max(0.001, Number(params.hoverSpin360Damping ?? 7.5));
-  const k = Math.exp(-damp * dt); // smooth exponential decay
-  g._spin360Vel *= k;
-
-  // integrate angle
-  g._spin360Angle += g._spin360Vel * dt;
-
-  // keep bounded (optional)
-  if (g._spin360Angle > Math.PI * 8) g._spin360Angle -= Math.PI * 8;
-  if (g._spin360Angle < -Math.PI * 8) g._spin360Angle += Math.PI * 8;
-}
-
 function updateHoverEffects() {
   if (!glyphs.length || (params.hoverMode || "none") === "none") {
-    // still integrate spin360 inertia so it can finish easing out
-    for (const g of glyphs) _integrateSpin360(g, _fxDt);
     resetHoverTransforms();
     _hoverStrength = 0;
     return;
   }
   if (!params.proximityLift) {
-    for (const g of glyphs) _integrateSpin360(g, _fxDt);
     resetHoverTransforms();
     _hoverStrength = 0;
     return;
   }
   if (!pointerActive) {
-    for (const g of glyphs) _integrateSpin360(g, _fxDt);
     resetHoverTransforms();
     _hoverStrength = 0;
     return;
@@ -1874,15 +1965,15 @@ function updateHoverEffects() {
     if (len > maxStep) _cursorDelta.multiplyScalar(maxStep / len);
     cursorLocal.addScaledVector(_cursorDelta, a);
   } else {
-    for (const g of glyphs) _integrateSpin360(g, _fxDt);
     resetHoverTransforms();
     _hoverStrength = 0;
     return;
   }
 
-  // compute cursor speed in local space
+  // cursor speed (smoothed)
   const dist = cursorLocal.distanceTo(_prevCursorLocal);
-  _cursorSpeed = dist / Math.max(1e-6, _fxDt);
+  const inst = dist / Math.max(1e-6, _fxDt);
+  _cursorSpeed = lerp(_cursorSpeed, inst, 0.22);
   _prevCursorLocal.copy(cursorLocal);
 
   const r = Math.max(1e-6, Number(params.proximityRadiusWorld || 140));
@@ -1907,14 +1998,14 @@ function updateHoverEffects() {
   const spinRandAmt = !!params.hoverSpinRandomAmount;
   const spinJit = clamp01(Number(params.hoverSpinAmountJitter ?? 0.35));
 
-  // Explode (unchanged)
+  // Explode (hover)
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
 
-  // Spin360 inertia tuning
-  const spin360Boost = Math.max(0, Number(params.hoverSpin360Boost ?? 0.018));
-  const spin360MaxVel = Math.max(0.1, Number(params.hoverSpin360MaxVel ?? 10.0));
+  // Spin360 (fixed)
   const spin360AxisBase = String(params.hoverSpin360Axis || "random").toLowerCase();
+  const minHoverF = clamp01(Number(params.hoverSpin360MinHoverF ?? 0.2));
+  const spin360Lift = clamp01(Number(params.hoverSpin360Lift ?? 0.12));
 
   let maxF = 0;
 
@@ -1929,15 +2020,32 @@ function updateHoverEffects() {
   }
   _hoverStrength = maxF;
 
+  // Spin360: trigger ONLY on actual mesh hover enter (raycast)
+  if (hoverMode === "spin360") {
+    const idx = _raycastGlyphIndexUnderCursor();
+    const allowed = _hoverStrength >= minHoverF;
+
+    if (allowed && idx >= 0) {
+      if (idx !== _hoveredGlyphIdx) {
+        _hoveredGlyphIdx = idx;
+        _spin360Trigger(glyphs[idx]);
+      }
+    } else {
+      _hoveredGlyphIdx = -1;
+    }
+  } else {
+    _hoveredGlyphIdx = -1;
+  }
+
   for (const g of glyphs) {
     const f = g.hoverF || 0;
 
     const bx = (g.baseGroupX || 0) + (g.animOffsetX || 0);
     const by = (g.baseGroupY || 0) + (g.animOffsetY || 0);
 
-    const brx = (g.baseRotX || 0) + (g.animRotX || 0);
-    const bry = (g.baseRotY || 0) + (g.animRotY || 0);
-    const brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
+    let brx = (g.baseRotX || 0) + (g.animRotX || 0);
+    let bry = (g.baseRotY || 0) + (g.animRotY || 0);
+    let brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
 
     const bsx = (g.baseScaleX || 1) * (g.animScale || 1);
     const bsy = (g.baseScaleY || 1) * (g.animScale || 1);
@@ -1957,19 +2065,12 @@ function updateHoverEffects() {
       sy = bsy,
       sz = bsz;
 
-    // Integrate spin360 inertia every frame
-    // (then, if hovered, add impulse)
-    if (!g._spin360Axis) g._spin360Axis = stablePickAxis(g.overlayIndex || 0, spin360AxisBase, true);
-    _integrateSpin360(g, _fxDt);
-
     if (hoverMode === "lift") {
       ty += lift * f;
     } else if (hoverMode === "rotate") {
       const ax = String(params.hoverRotateAxis || "z").toLowerCase();
       let pick = ax;
-
       if (pick === "random") pick = stablePickAxis(g.overlayIndex || 0, "random", true);
-
       if (pick === "x") rx += rot * f;
       else if (pick === "y") ry += rot * f;
       else rz += rot * f;
@@ -1997,7 +2098,6 @@ function updateHoverEffects() {
       tx += nx * push;
       ty += ny * push;
     } else if (hoverMode === "spin") {
-      // Updated: axis + optional random dir + optional random amount
       let ax = spinAxisBase;
       if (ax === "random") ax = stablePickAxis(g.overlayIndex || 0, "random", true);
 
@@ -2005,7 +2105,6 @@ function updateHoverEffects() {
       let amt = spinBaseRad;
 
       if (spinRandAmt) {
-        // jitter around base, stable
         const j = g._spinJitter || 0;
         amt = spinBaseRad * (1 + j * spinJit);
       }
@@ -2019,53 +2118,27 @@ function updateHoverEffects() {
       sx *= s;
       sy *= s;
     } else if (hoverMode === "spin360") {
-      // NEW: impulse adds to angular velocity based on cursor speed + hover falloff
-      // Impulse magnitude: cursorSpeed * boost * f
-      const impulse = _cursorSpeed * spin360Boost * f;
-
-      // choose axis per glyph (stable) possibly forced by UI
-      const pickAxis =
-        spin360AxisBase === "random" ? g._spin360Axis : String(spin360AxisBase || "z").toLowerCase();
-
-      // direction
-      const dir = stablePickSign(g.overlayIndex || 0, !!params.hoverSpin360RandomDir);
-
-      g._spin360Vel += impulse * dir;
-
-      // cap
-      g._spin360Vel = clamp(g._spin360Vel, -spin360MaxVel, spin360MaxVel);
-
-      // apply rotation angle onto picked axis
-      const ang = g._spin360Angle;
-
-      if (pickAxis === "x") rx += ang;
-      else if (pickAxis === "y") ry += ang;
-      else rz += ang;
-
-      // small lift helps readability
-      ty += lift * 0.12 * f;
+      // In spin360 mode we still allow subtle lift + sweep for feel
+      ty += lift * spin360Lift * f;
     } else if (hoverMode === "explode") {
-      tx += (g._rndX || 0) * explodeAmt * f;
-      ty += (g._rndY || 0) * explodeAmt * f;
-      rz += (g._rndX || 0) * explodeTwist * f;
+      // hover explode
+      tx += (g._expX || 0) * explodeAmt * f;
+      ty += (g._expY || 0) * explodeAmt * f;
+      rz += (g._expX || 0) * explodeTwist * f;
       const s = 1 + (pulse * 0.9) * f;
       sx *= s;
       sy *= s;
       ty += lift * 0.25 * f;
     }
 
-    // apply spin360 rotation even when hoverMode isn’t spin360
-    // (so inertia keeps running after you leave)
-    if (hoverMode !== "spin360") {
-      const ang = g._spin360Angle || 0;
-      const pickAxis =
-        spin360AxisBase === "random" ? g._spin360Axis : String(spin360AxisBase || "z").toLowerCase();
-
-      if (Math.abs(ang) > 1e-6) {
-        if (pickAxis === "x") rx += ang;
-        else if (pickAxis === "y") ry += ang;
-        else rz += ang;
-      }
+    // Apply additive spin360 rotation ALWAYS (so preset animation + hover + spin360 layer properly)
+    const add = g._spin360Add || 0;
+    if (add !== 0) {
+      let ax = spin360AxisBase;
+      if (ax === "random") ax = g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
+      if (ax === "x") rx += add;
+      else if (ax === "y") ry += add;
+      else rz += add;
     }
 
     if (sweepOn && sweepAmt > 0.0001) {

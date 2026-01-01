@@ -1,74 +1,99 @@
 // wf-3dtype-ui.js
-(function(){
-  const TAG="[3DType/UI]";
-  const UI_VERSION="ui_v11_spin360+perLetterFace+noBgChecker";
+(function () {
+  const TAG = "[3DType/UI]";
+  const UI_VERSION =
+    "ui_v12_spin360Inertia + perLetterFace + bgNoChecker + faceCheckerWorldUV";
   console.log(TAG, UI_VERSION);
   window.__WF_3DTYPE_UI_VERSION__ = UI_VERSION;
 
-  const wait=(cond,ms=40,limit=450)=>new Promise((res,rej)=>{
-    let n=0;
-    const t=setInterval(()=>{
-      let ok=false;
-      try{ ok=!!cond(); }catch(e){}
-      if(ok){ clearInterval(t); res(); return; }
-      if(++n>limit){ clearInterval(t); rej(new Error("UI timed out waiting for deps/layout.")); }
-    },ms);
-  });
+  const wait = (cond, ms = 40, limit = 450) =>
+    new Promise((res, rej) => {
+      let n = 0;
+      const t = setInterval(() => {
+        let ok = false;
+        try {
+          ok = !!cond();
+        } catch (e) {}
+        if (ok) {
+          clearInterval(t);
+          res();
+          return;
+        }
+        if (++n > limit) {
+          clearInterval(t);
+          rej(new Error("UI timed out waiting for deps/layout."));
+        }
+      }, ms);
+    });
 
-  function debounce(fn,ms=90){let t;return (...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms)};}
-  function lerp(a,b,t){ return a+(b-a)*t; }
+  function debounce(fn, ms = 90) {
+    let t;
+    return (...a) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...a), ms);
+    };
+  }
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
 
-  wait(() => (
-    window.Tweakpane &&
-    window.params &&
-    window.buildText &&
-    window.rebuildFillMaterials &&
-    window.playAnimation &&
-    window.stopAnimation &&
-    window._syncFXUniforms &&
-    window.applyFontSelection &&
-    window.setFontFromUploadedJsonText &&
-    window.__applyCharZOffsets &&
-    window.__getCharCount &&
-    window.__applyFacePerLetterColors &&
-    window.__ensureFacePerLetterColors &&
-    window.__WF_3DTYPE_TOOL__ &&
-    document.getElementById("pane") &&
-    (document.getElementById("pane-inner") || document.getElementById("pane"))
-  ), 40, 650)
-  .then(()=>waitForPaneLayoutReady())
-  .then(()=>mountUI())
-  .catch(err=>console.warn(TAG,err.message));
+  wait(
+    () =>
+      window.Tweakpane &&
+      window.params &&
+      window.buildText &&
+      window.rebuildFillMaterials &&
+      window.playAnimation &&
+      window.stopAnimation &&
+      window._syncFXUniforms &&
+      window.applyFontSelection &&
+      window.setFontFromUploadedJsonText &&
+      window.__applyCharZOffsets &&
+      window.__getCharCount &&
+      window.__WF_3DTYPE_TOOL__ &&
+      document.getElementById("pane") &&
+      (document.getElementById("pane-inner") || document.getElementById("pane")),
+    40,
+    650
+  )
+    .then(() => waitForPaneLayoutReady())
+    .then(() => mountUI())
+    .catch((err) => console.warn(TAG, err.message));
 
-  function waitForPaneLayoutReady(){
-    return wait(()=>{
+  function waitForPaneLayoutReady() {
+    return wait(() => {
       const host = document.getElementById("pane-inner") || document.getElementById("pane");
-      if(!host) return false;
+      if (!host) return false;
       const r = host.getBoundingClientRect();
       return r.height > 40;
     }, 40, 250);
   }
 
-  function mountUI(){
+  function mountUI() {
     const paneOuter = document.getElementById("pane");
-    const paneHost  = document.getElementById("pane-inner") || paneOuter;
-    if(!paneOuter || !paneHost){ console.warn(TAG,"#pane/#pane-inner missing"); return; }
+    const paneHost = document.getElementById("pane-inner") || paneOuter;
+    if (!paneOuter || !paneHost) {
+      console.warn(TAG, "#pane/#pane-inner missing");
+      return;
+    }
 
     const prev = document.getElementById("__tp_root");
-    if(prev) prev.remove();
+    if (prev) prev.remove();
 
     const root = document.createElement("div");
-    root.id="__tp_root";
+    root.id = "__tp_root";
     paneHost.appendChild(root);
 
     let rescueUsed = false;
 
-    function ensureParam(params, key, val){
-      if(!(key in params)) params[key] = val;
+    function ensureParam(params, key, val) {
+      if (!(key in params)) params[key] = val;
     }
 
-    function buildEverything(){
-      try{ window.__tp_ui_cleanup?.(); }catch(e){}
+    function buildEverything() {
+      try {
+        window.__tp_ui_cleanup?.();
+      } catch (e) {}
       root.innerHTML = "";
 
       const params = window.params;
@@ -76,46 +101,59 @@
       // ---------------------------
       // SAFE DEFAULTS
       // ---------------------------
-      ensureParam(params,"bgMode","solid");
-      ensureParam(params,"bgSolid", params.bg || "#111111");
+      ensureParam(params, "bgMode", "solid");
+      ensureParam(params, "bgSolid", "#111111");
 
-      ensureParam(params,"bgGradA","#101018");
-      ensureParam(params,"bgGradB","#1a0f24");
-      ensureParam(params,"bgGradAngle",35);
-      ensureParam(params,"bgGradSoft",0.65);
+      ensureParam(params, "bgGradA", "#101018");
+      ensureParam(params, "bgGradB", "#1a0f24");
+      ensureParam(params, "bgGradAngle", 35);
+      ensureParam(params, "bgGradSoft", 0.65);
 
-      ensureParam(params,"facePerLetterColors", []);
+      ensureParam(params, "faceMode", "gradient");
+      ensureParam(params, "faceUVSpace", "glyph");
+      ensureParam(params, "faceSolid", "#ff0000");
 
-      // animation tuning defaults
-      ensureParam(params,"animSpinDeg",360);
-      ensureParam(params,"animExplodeAmount",220);
-      ensureParam(params,"animExplodeTwistDeg",45);
+      ensureParam(params, "faceLetterColors", []);
 
-      // hover tuning defaults
-      ensureParam(params,"hoverSpinDeg",120);
-      ensureParam(params,"hoverSpinAxis","z");
-      ensureParam(params,"hoverSpinRandomAxis",false);
-      ensureParam(params,"hoverSpinRandomDir",false);
+      ensureParam(params, "faceChkScale", 42);
+      ensureParam(params, "faceChkLineWidth", 3);
+      ensureParam(params, "faceChkRotate", 0);
+      ensureParam(params, "faceChkColorA", "#0e0e12");
+      ensureParam(params, "faceChkColorB", "#161623");
+      ensureParam(params, "faceChkLineColor", "#ffffff");
 
-      ensureParam(params,"hoverExplodeAmount",120);
-      ensureParam(params,"hoverExplodeTwistDeg",35);
+      ensureParam(params, "repelAmount", 80);
+      ensureParam(params, "repelMinDistance", 6);
+      ensureParam(params, "repelClamp", 140);
 
-      // spin360 defaults
-      ensureParam(params,"hoverSpin360Axis","z");
-      ensureParam(params,"hoverSpin360Turns",1);
-      ensureParam(params,"hoverSpin360Inertia",0.85);
-      ensureParam(params,"hoverSpin360MinTrigger",0.12);
-      ensureParam(params,"hoverSpin360Boost",3.0);
+      // Anim tuning
+      ensureParam(params, "animSpinDeg", 360);
+      ensureParam(params, "animExplodeAmount", 220);
+      ensureParam(params, "animExplodeTwistDeg", 45);
+
+      // Hover tuning
+      ensureParam(params, "hoverSpinDeg", 120);
+      ensureParam(params, "hoverSpinAxis", "z");
+      ensureParam(params, "hoverSpinRandomDir", true);
+      ensureParam(params, "hoverSpinRandomAmount", false);
+      ensureParam(params, "hoverSpinAmountJitter", 0.35);
+
+      // New spin360 inertia
+      ensureParam(params, "hoverSpin360Axis", "random");
+      ensureParam(params, "hoverSpin360RandomDir", true);
+      ensureParam(params, "hoverSpin360Boost", 0.018);
+      ensureParam(params, "hoverSpin360MaxVel", 10.0);
+      ensureParam(params, "hoverSpin360Damping", 7.5);
 
       const Pane = window.Tweakpane.Pane;
       const pane = new Pane({ container: root, title: "Controls" });
 
-      const tab = pane.addTab({ pages: [{title:"Type"},{title:"Look"},{title:"Motion"}] });
-      const tType   = tab.pages[0];
-      const tLook   = tab.pages[1];
+      const tab = pane.addTab({ pages: [{ title: "Type" }, { title: "Look" }, { title: "Motion" }] });
+      const tType = tab.pages[0];
+      const tLook = tab.pages[1];
       const tMotion = tab.pages[2];
 
-      function folderContent(folder){
+      function folderContent(folder) {
         return (
           folder?.element?.querySelector('[class*="fldv_c"]') ||
           folder?.element?.querySelector('[class*="folder"] [class*="content"]') ||
@@ -126,26 +164,26 @@
       // =========================================================
       // Shift+H hide/show
       // =========================================================
-      const CONTROLS_KEY="__tp_controls_hidden";
+      const CONTROLS_KEY = "__tp_controls_hidden";
 
-      function isTypingTarget(el){
-        if(!el) return false;
-        const tag = (el.tagName||"").toLowerCase();
+      function isTypingTarget(el) {
+        if (!el) return false;
+        const tag = (el.tagName || "").toLowerCase();
         return tag === "input" || tag === "textarea" || el.isContentEditable;
       }
 
-      function setHidden(hidden){
-        const paneEl=document.getElementById("pane");
-        if(!paneEl) return;
-        paneEl.style.display=hidden?"none":"";
-        window[CONTROLS_KEY]=hidden;
+      function setHidden(hidden) {
+        const paneEl = document.getElementById("pane");
+        if (!paneEl) return;
+        paneEl.style.display = hidden ? "none" : "";
+        window[CONTROLS_KEY] = hidden;
       }
 
-      function onKeyDown(e){
-        if(!e.shiftKey) return;
-        const k=(e.key||"").toLowerCase();
-        if(k!=="h") return;
-        if(isTypingTarget(e.target)) return;
+      function onKeyDown(e) {
+        if (!e.shiftKey) return;
+        const k = (e.key || "").toLowerCase();
+        if (k !== "h") return;
+        if (isTypingTarget(e.target)) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -156,55 +194,55 @@
       // =========================================================
       // TAB RESCUE
       // =========================================================
-      function getTabButtons(){
+      function getTabButtons() {
         const row = root.querySelector(".tp-tbv_t") || root.querySelector("[class*='tbv_t']");
-        if(!row) return [];
+        if (!row) return [];
         return Array.from(row.querySelectorAll("button"));
       }
-      function getPages(){
+      function getPages() {
         return Array.from(root.querySelectorAll(".tp-tbpv, [class*='tbpv']"));
       }
-      function activeIndex(){
+      function activeIndex() {
         const btns = getTabButtons();
-        for(let i=0;i<btns.length;i++){
-          if(btns[i].getAttribute("aria-selected")==="true") return i;
+        for (let i = 0; i < btns.length; i++) {
+          if (btns[i].getAttribute("aria-selected") === "true") return i;
         }
         return 0;
       }
-      function activePageLooksEmpty(){
+      function activePageLooksEmpty() {
         const pages = getPages();
-        if(!pages.length) return false;
+        if (!pages.length) return false;
 
         const i = activeIndex();
         const p = pages[i] || pages[0];
-        if(!p) return false;
+        if (!p) return false;
 
         const h = p.getBoundingClientRect().height;
-        if(h > 6) return false;
+        if (h > 6) return false;
 
-        const anyVisible = Array.from(p.querySelectorAll("*")).some(el=>{
+        const anyVisible = Array.from(p.querySelectorAll("*")).some((el) => {
           const r = el.getBoundingClientRect();
           return r.width > 2 && r.height > 2;
         });
         return !anyVisible;
       }
 
-      const rescueCheck = debounce(()=>{
+      const rescueCheck = debounce(() => {
         const idx = activeIndex();
-        if(idx === 0) return;
+        if (idx === 0) return;
 
-        if(activePageLooksEmpty()){
-          if(rescueUsed) return;
+        if (activePageLooksEmpty()) {
+          if (rescueUsed) return;
           rescueUsed = true;
-          console.warn(TAG,"Tab render glitch detected. Rebuilding pane once (rescue).");
-          setTimeout(()=>buildEverything(), 0);
+          console.warn(TAG, "Tab render glitch detected. Rebuilding pane once (rescue).");
+          setTimeout(() => buildEverything(), 0);
         }
       }, 60);
 
-      function attachRescueToTabClicks(){
+      function attachRescueToTabClicks() {
         const btns = getTabButtons();
-        btns.forEach(b=>{
-          b.addEventListener("click", ()=>setTimeout(rescueCheck, 0), { passive:true });
+        btns.forEach((b) => {
+          b.addEventListener("click", () => setTimeout(rescueCheck, 0), { passive: true });
         });
         setTimeout(rescueCheck, 80);
       }
@@ -212,57 +250,64 @@
       // ---------------------------
       // Canvas
       // ---------------------------
-      const fCanvas=tType.addFolder({title:"Canvas"});
-      fCanvas.addBinding(params,"aspect",{label:"ratio",options:{Free:"free","1:1":"1:1","4:5":"4:5","9:16":"9:16","9:18":"9:18","16:9":"16:9"}});
-      fCanvas.addBinding(params,"margin",{label:"margin",min:0,max:64,step:1});
+      const fCanvas = tType.addFolder({ title: "Canvas" });
+      fCanvas.addBinding(params, "aspect", {
+        label: "ratio",
+        options: { Free: "free", "1:1": "1:1", "4:5": "4:5", "9:16": "9:16", "9:18": "9:18", "16:9": "16:9" },
+      });
+      fCanvas.addBinding(params, "margin", { label: "margin", min: 0, max: 64, step: 1 });
 
       // ---------------------------
       // Text
       // ---------------------------
-      const fText=tType.addFolder({title:"Text"});
-      const textWrap=document.createElement("div");
-      textWrap.className="tp-custom-text";
-      textWrap.innerHTML=`
+      const fText = tType.addFolder({ title: "Text" });
+      const textWrap = document.createElement("div");
+      textWrap.className = "tp-custom-text";
+      textWrap.innerHTML = `
         <label>Content</label>
         <textarea spellcheck="false"></textarea>
       `;
-      const ta=textWrap.querySelector("textarea");
-      ta.value=params.text||"";
+      const ta = textWrap.querySelector("textarea");
+      ta.value = params.text || "";
       folderContent(fText).appendChild(textWrap);
 
-      const onTextInput=debounce(()=>{
-        params.text=ta.value;
+      const onTextInput = debounce(() => {
+        params.text = ta.value;
         window.buildText();
-        try{ window.__rebuildZControls?.(); }catch(e){}
-        try{ window.__rebuildFaceColorControls?.(); }catch(e){}
-        if(window.__tp_animPlaying) window.playAnimation();
-      },60);
-      ta.addEventListener("input",onTextInput);
+        try {
+          window.__rebuildZControls?.();
+        } catch (e) {}
+        try {
+          window.__rebuildFaceColorControls?.();
+        } catch (e) {}
+        if (window.__tp_animPlaying) window.playAnimation();
+      }, 60);
+      ta.addEventListener("input", onTextInput);
 
       // ---------------------------
       // Font
       // ---------------------------
-      const fFont=tType.addFolder({title:"Font"});
+      const fFont = tType.addFolder({ title: "Font" });
       const presets = window.FONT_PRESETS || {};
       const presetKeys = Object.keys(presets);
       const presetOptions = {};
-      presetKeys.forEach(k => presetOptions[k]=k);
+      presetKeys.forEach((k) => (presetOptions[k] = k));
 
-      ensureParam(params,"fontSource","preset");
-      ensureParam(params,"fontPreset",presetKeys[0] || "");
-      ensureParam(params,"fontUrl","");
+      ensureParam(params, "fontSource", "preset");
+      ensureParam(params, "fontPreset", presetKeys[0] || "");
+      ensureParam(params, "fontUrl", "");
 
-      if(params.fontSource==="preset" && presetKeys.length && !presets[params.fontPreset]){
+      if (params.fontSource === "preset" && presetKeys.length && !presets[params.fontPreset]) {
         params.fontPreset = presetKeys[0];
       }
 
-      const bSource = fFont.addBinding(params,"fontSource",{label:"source",options:{Preset:"preset",URL:"url",Upload:"upload"}});
-      const bPreset = fFont.addBinding(params,"fontPreset",{label:"preset",options:presetOptions});
-      const bUrl    = fFont.addBinding(params,"fontUrl",{label:"url"});
+      const bSource = fFont.addBinding(params, "fontSource", { label: "source", options: { Preset: "preset", URL: "url", Upload: "upload" } });
+      const bPreset = fFont.addBinding(params, "fontPreset", { label: "preset", options: presetOptions });
+      const bUrl = fFont.addBinding(params, "fontUrl", { label: "url" });
 
-      const uploadWrap=document.createElement("div");
-      uploadWrap.className="tp-custom-font";
-      uploadWrap.innerHTML=`
+      const uploadWrap = document.createElement("div");
+      uploadWrap.className = "tp-custom-font";
+      uploadWrap.innerHTML = `
         <label>Upload typeface JSON</label>
         <div class="row">
           <button type="button" data-pick>Choose file</button>
@@ -271,527 +316,746 @@
         <input type="file" accept=".json,.typeface.json,application/json" />
         <div class="hint">Must be a THREE typeface JSON (.typeface.json export).</div>
       `;
-      const fileInput=uploadWrap.querySelector("input[type=file]");
-      const pickBtn  =uploadWrap.querySelector("[data-pick]");
-      const nameEl   =uploadWrap.querySelector("[data-name]");
-      pickBtn.addEventListener("click",()=>fileInput.click());
+      const fileInput = uploadWrap.querySelector("input[type=file]");
+      const pickBtn = uploadWrap.querySelector("[data-pick]");
+      const nameEl = uploadWrap.querySelector("[data-name]");
+      pickBtn.addEventListener("click", () => fileInput.click());
       folderContent(fFont).appendChild(uploadWrap);
 
-      fFont.addButton({title:"Apply font"}).on("click", async ()=>{
-        try{
+      fFont.addButton({ title: "Apply font" }).on("click", async () => {
+        try {
           await window.applyFontSelection();
           window.buildText();
-          try{ window.__rebuildZControls?.(); }catch(e){}
-          try{ window.__rebuildFaceColorControls?.(); }catch(e){}
-          if(window.__tp_animPlaying) window.playAnimation();
-        }catch(e){
-          console.warn(TAG,"apply font failed",e);
+          try {
+            window.__rebuildZControls?.();
+          } catch (e) {}
+          try {
+            window.__rebuildFaceColorControls?.();
+          } catch (e) {}
+          if (window.__tp_animPlaying) window.playAnimation();
+        } catch (e) {
+          console.warn(TAG, "apply font failed", e);
           alert("Font load failed. See console.");
         }
       });
 
-      function refreshFontUI(){
-        const isPreset=params.fontSource==="preset";
-        const isUrl=params.fontSource==="url";
-        const isUpload=params.fontSource==="upload";
-        bPreset.element.style.display=isPreset?"":"none";
-        bUrl.element.style.display=isUrl?"":"none";
-        uploadWrap.style.display=isUpload?"":"none";
+      function refreshFontUI() {
+        const isPreset = params.fontSource === "preset";
+        const isUrl = params.fontSource === "url";
+        const isUpload = params.fontSource === "upload";
+        bPreset.element.style.display = isPreset ? "" : "none";
+        bUrl.element.style.display = isUrl ? "" : "none";
+        uploadWrap.style.display = isUpload ? "" : "none";
       }
       refreshFontUI();
 
-      fileInput.addEventListener("change", async ()=>{
-        if(!fileInput.files || !fileInput.files[0]) return;
+      fileInput.addEventListener("change", async () => {
+        if (!fileInput.files || !fileInput.files[0]) return;
         const file = fileInput.files[0];
         nameEl.textContent = file.name;
 
-        try{
+        try {
           const text = await file.text();
           params.fontSource = "upload";
           refreshFontUI();
 
           let obj;
-          try{ obj = JSON.parse(text); }
-          catch(parseErr){
+          try {
+            obj = JSON.parse(text);
+          } catch (parseErr) {
             console.warn(TAG, "JSON.parse failed:", parseErr);
             alert("That file isn’t valid JSON.");
             return;
           }
 
-          if(!obj || !obj.glyphs){
-            console.warn(TAG, "Not a THREE typeface JSON. Keys:", Object.keys(obj||{}));
+          if (!obj || !obj.glyphs) {
+            console.warn(TAG, "Not a THREE typeface JSON. Keys:", Object.keys(obj || {}));
             alert("This JSON is not a THREE typeface font (missing 'glyphs'). Convert the font to .typeface.json first.");
             return;
           }
 
           window.setFontFromUploadedJsonText(text);
           window.buildText();
-          try{ window.__rebuildZControls?.(); }catch(e){}
-          try{ window.__rebuildFaceColorControls?.(); }catch(e){}
-          if(window.__tp_animPlaying) window.playAnimation();
-
-        }catch(e){
+          try {
+            window.__rebuildZControls?.();
+          } catch (e) {}
+          try {
+            window.__rebuildFaceColorControls?.();
+          } catch (e) {}
+          if (window.__tp_animPlaying) window.playAnimation();
+        } catch (e) {
           console.warn(TAG, "Upload failed:", e);
           alert("Could not load this font JSON. Check console for details.");
         }
       });
 
-      pane.on("change",(ev)=>{
-        const k=ev?.target?.key;
-        if(!k) return;
-        if(k==="fontSource"){ refreshFontUI(); return; }
+      pane.on("change", (ev) => {
+        const k = ev?.target?.key;
+        if (!k) return;
+        if (k === "fontSource") {
+          refreshFontUI();
+          return;
+        }
       });
 
       // ---------------------------
       // Typography
       // ---------------------------
-      const fTypeControls=tType.addFolder({title:"Typography"});
-      fTypeControls.addBinding(params,"size",{min:12,max:140,step:1});
-      fTypeControls.addBinding(params,"depth",{min:0,max:240,step:1});
-      fTypeControls.addBinding(params,"charSpacing",{label:"char spacing",min:-30,max:80,step:1});
-      fTypeControls.addBinding(params,"lineSpacing",{label:"line spacing",min:.8,max:2.5,step:.01});
-      fTypeControls.addBinding(params,"align",{options:{Center:"center",Left:"left",Right:"right"}});
+      const fTypeControls = tType.addFolder({ title: "Typography" });
+      fTypeControls.addBinding(params, "size", { min: 12, max: 140, step: 1 });
+      fTypeControls.addBinding(params, "depth", { min: 0, max: 240, step: 1 });
+      fTypeControls.addBinding(params, "charSpacing", { label: "char spacing", min: -30, max: 80, step: 1 });
+      fTypeControls.addBinding(params, "lineSpacing", { label: "line spacing", min: 0.8, max: 2.5, step: 0.01 });
+      fTypeControls.addBinding(params, "align", { options: { Center: "center", Left: "left", Right: "right" } });
 
       // ---------------------------
       // Per-letter Z
       // ---------------------------
-      const fCharZ=tType.addFolder({title:"Per-letter Z"});
-      const ZMIN=-200, ZMAX=200, ZSTEP=1;
+      const fCharZ = tType.addFolder({ title: "Per-letter Z" });
+      const ZMIN = -200,
+        ZMAX = 200,
+        ZSTEP = 1;
       let zProxy = {};
       let zBindings = [];
       let zNoGlyphBlade = null;
 
-      function ensureZArray(){
-        const n=window.__getCharCount();
-        if(!Array.isArray(params.charZOffsets)) params.charZOffsets=[];
-        if(params.charZOffsets.length!==n){
-          const next=new Array(n);
-          for(let i=0;i<n;i++) next[i]=Number(params.charZOffsets[i] ?? 0);
-          params.charZOffsets=next;
+      function ensureZArray() {
+        const n = window.__getCharCount();
+        if (!Array.isArray(params.charZOffsets)) params.charZOffsets = [];
+        if (params.charZOffsets.length !== n) {
+          const next = new Array(n);
+          for (let i = 0; i < n; i++) next[i] = Number(params.charZOffsets[i] ?? 0);
+          params.charZOffsets = next;
         }
       }
-      function syncProxyFromParams(){
+      function syncProxyFromParams() {
         ensureZArray();
         zProxy = {};
-        for(let i=0;i<params.charZOffsets.length;i++){
-          zProxy["c"+i] = Number(params.charZOffsets[i] || 0);
+        for (let i = 0; i < params.charZOffsets.length; i++) {
+          zProxy["c" + i] = Number(params.charZOffsets[i] || 0);
         }
       }
-      function syncParamsFromProxy(){
-        for(let i=0;i<params.charZOffsets.length;i++){
-          params.charZOffsets[i] = Number(zProxy["c"+i] || 0);
+      function syncParamsFromProxy() {
+        for (let i = 0; i < params.charZOffsets.length; i++) {
+          params.charZOffsets[i] = Number(zProxy["c" + i] || 0);
         }
       }
-      function clearZBindings(){
-        for(const b of zBindings){ try{ b.dispose?.(); }catch(e){} }
+      function clearZBindings() {
+        for (const b of zBindings) {
+          try {
+            b.dispose?.();
+          } catch (e) {}
+        }
         zBindings.length = 0;
-        if(zNoGlyphBlade){ try{ zNoGlyphBlade.dispose?.(); }catch(e){} zNoGlyphBlade=null; }
+        if (zNoGlyphBlade) {
+          try {
+            zNoGlyphBlade.dispose?.();
+          } catch (e) {}
+          zNoGlyphBlade = null;
+        }
       }
-      function rebuildZControls(){
+      function rebuildZControls() {
         ensureZArray();
         clearZBindings();
         syncProxyFromParams();
-        const n=params.charZOffsets.length;
-        if(n===0){
-          zNoGlyphBlade=fCharZ.addBlade({view:"text", value:"(No glyphs)"});
+        const n = params.charZOffsets.length;
+        if (n === 0) {
+          zNoGlyphBlade = fCharZ.addBlade({ view: "text", value: "(No glyphs)" });
           return;
         }
-        for(let i=0;i<n;i++){
-          const b=fCharZ.addBinding(zProxy,"c"+i,{ label:String(i+1), min:ZMIN, max:ZMAX, step:ZSTEP });
-          b.on("change",()=>{ syncParamsFromProxy(); window.__applyCharZOffsets(); });
+        for (let i = 0; i < n; i++) {
+          const b = fCharZ.addBinding(zProxy, "c" + i, { label: String(i + 1), min: ZMIN, max: ZMAX, step: ZSTEP });
+          b.on("change", () => {
+            syncParamsFromProxy();
+            window.__applyCharZOffsets();
+          });
           zBindings.push(b);
         }
       }
 
-      fCharZ.addButton({title:"Ramp"}).on("click",()=>{
+      fCharZ.addButton({ title: "Ramp" }).on("click", () => {
         ensureZArray();
-        const n=params.charZOffsets.length;
-        if(n<=1) return;
-        const span=120;
-        for(let i=0;i<n;i++) params.charZOffsets[i]=Math.round(lerp(-span,span,i/(n-1)));
-        syncProxyFromParams(); zBindings.forEach(b=>b.refresh()); window.__applyCharZOffsets();
+        const n = params.charZOffsets.length;
+        if (n <= 1) return;
+        const span = 120;
+        for (let i = 0; i < n; i++) params.charZOffsets[i] = Math.round(lerp(-span, span, i / (n - 1)));
+        syncProxyFromParams();
+        zBindings.forEach((b) => b.refresh());
+        window.__applyCharZOffsets();
       });
-      fCharZ.addButton({title:"Reset"}).on("click",()=>{
+      fCharZ.addButton({ title: "Reset" }).on("click", () => {
         ensureZArray();
         params.charZOffsets.fill(0);
-        syncProxyFromParams(); zBindings.forEach(b=>b.refresh()); window.__applyCharZOffsets();
+        syncProxyFromParams();
+        zBindings.forEach((b) => b.refresh());
+        window.__applyCharZOffsets();
       });
-      fCharZ.addButton({title:"Random"}).on("click",()=>{
+      fCharZ.addButton({ title: "Random" }).on("click", () => {
         ensureZArray();
-        const span=140;
-        for(let i=0;i<params.charZOffsets.length;i++) params.charZOffsets[i]=Math.round((Math.random()*2-1)*span);
-        syncProxyFromParams(); zBindings.forEach(b=>b.refresh()); window.__applyCharZOffsets();
+        const span = 140;
+        for (let i = 0; i < params.charZOffsets.length; i++) params.charZOffsets[i] = Math.round((Math.random() * 2 - 1) * span);
+        syncProxyFromParams();
+        zBindings.forEach((b) => b.refresh());
+        window.__applyCharZOffsets();
       });
 
-      window.__rebuildZControls=rebuildZControls;
-      rebuildZControls();
+      window.__rebuildZControls = rebuildZControls;
 
       // ---------------------------
       // LOOK
       // ---------------------------
-      const fBg=tLook.addFolder({title:"Background"});
-      const bBgMode = fBg.addBinding(params,"bgMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient"}});
-      const bBgSolid = fBg.addBinding(params,"bgSolid",{label:"solid",view:"color"});
+      const fBg = tLook.addFolder({ title: "Background" });
 
-      const fBgGrad = fBg.addFolder({title:"Gradient"});
-      const bBgGradA = fBgGrad.addBinding(params,"bgGradA",{label:"A",view:"color"});
-      const bBgGradB = fBgGrad.addBinding(params,"bgGradB",{label:"B",view:"color"});
-      const bBgGradAngle = fBgGrad.addBinding(params,"bgGradAngle",{label:"angle",min:0,max:360,step:1});
-      const bBgGradSoft  = fBgGrad.addBinding(params,"bgGradSoft",{label:"soft",min:0,max:1,step:0.01});
+      // BG MODE: ONLY solid/gradient
+      const bBgMode = fBg.addBinding(params, "bgMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient" } });
+      const bBgSolid = fBg.addBinding(params, "bgSolid", { label: "solid", view: "color" });
 
-      function refreshBgUI(){
+      const fBgGrad = fBg.addFolder({ title: "Gradient" });
+      const bBgGradA = fBgGrad.addBinding(params, "bgGradA", { label: "A", view: "color" });
+      const bBgGradB = fBgGrad.addBinding(params, "bgGradB", { label: "B", view: "color" });
+      const bBgGradAngle = fBgGrad.addBinding(params, "bgGradAngle", { label: "angle", min: 0, max: 360, step: 1 });
+      const bBgGradSoft = fBgGrad.addBinding(params, "bgGradSoft", { label: "soft", min: 0, max: 1, step: 0.01 });
+
+      function refreshBgUI() {
         const m = params.bgMode;
-        bBgSolid.element.style.display = (m==="solid") ? "" : "none";
-        fBgGrad.element.style.display  = (m==="gradient") ? "" : "none";
+        bBgSolid.element.style.display = m === "solid" ? "" : "none";
+        fBgGrad.element.style.display = m === "gradient" ? "" : "none";
       }
       refreshBgUI();
 
-      function rebuildBg(){
-        try{ window.rebuildBackground?.(); }catch(e){}
+      function rebuildBg() {
+        try {
+          window.rebuildBackground?.();
+        } catch (e) {}
       }
 
-      ;[bBgMode,bBgSolid,bBgGradA,bBgGradB,bBgGradAngle,bBgGradSoft].forEach(b=>{
-        try{ b.on("change", ()=>{
-          if(b===bBgMode) refreshBgUI();
-          rebuildBg();
-        }); }catch(e){}
+      [bBgMode, bBgSolid, bBgGradA, bBgGradB, bBgGradAngle, bBgGradSoft].forEach((b) => {
+        try {
+          b.on("change", () => {
+            if (b === bBgMode) refreshBgUI();
+            rebuildBg();
+          });
+        } catch (e) {}
       });
 
-      const fFill=tLook.addFolder({title:"Fill"});
-      const fFace=fFill.addFolder({title:"Faces"});
+      const fFill = tLook.addFolder({ title: "Fill" });
+      const fFace = fFill.addFolder({ title: "Faces" });
 
-      fFace.addBinding(params,"faceMode",{label:"mode",options:{
-        Solid:"solid",
-        Gradient:"gradient",
-        Checker:"checker",
-        "Per Letter":"perLetter"
-      }});
-      fFace.addBinding(params,"faceUVSpace",{label:"UV",options:{Glyph:"glyph",World:"world"}});
-      fFace.addBinding(params,"faceSolid",{view:"color"});
+      // Face modes now include perLetter
+      const bFaceMode = fFace.addBinding(params, "faceMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient", Checker: "checker", "Per Letter": "perLetter" } });
 
-      fFace.addBinding(params,"faceGradA",{label:"A",view:"color"}); fFace.addBinding(params,"faceStopA",{label:"A stop",min:0,max:1,step:.01});
-      fFace.addBinding(params,"faceGradB",{label:"B",view:"color"}); fFace.addBinding(params,"faceStopB",{label:"B stop",min:0,max:1,step:.01});
-      fFace.addBinding(params,"faceGradC",{label:"C",view:"color"}); fFace.addBinding(params,"faceStopC",{label:"C stop",min:0,max:1,step:.01});
-      fFace.addBinding(params,"faceGradDir",{label:"dir",options:{Vertical:"vertical",Horizontal:"horizontal",Diagonal:"diagonal"}});
+      // UV selector (hidden for checker + perLetter)
+      const bFaceUV = fFace.addBinding(params, "faceUVSpace", { label: "UV", options: { Glyph: "glyph", World: "world" } });
 
-      const fFaceChk = fFace.addFolder({title:"Face Checker"});
-      fFaceChk.addBinding(params,"faceChkScale",{label:"scale",min:4,max:200,step:1});
-      fFaceChk.addBinding(params,"faceChkLineWidth",{label:"line width",min:0,max:40,step:1});
-      fFaceChk.addBinding(params,"faceChkRotate",{label:"rotate",min:0,max:360,step:1});
-      fFaceChk.addBinding(params,"faceChkColorA",{label:"square A",view:"color"});
-      fFaceChk.addBinding(params,"faceChkColorB",{label:"square B",view:"color"});
-      fFaceChk.addBinding(params,"faceChkLineColor",{label:"line",view:"color"});
+      const bFaceSolid = fFace.addBinding(params, "faceSolid", { view: "color" });
 
-      // Per-letter face colors UI
-      const fFacePer = fFace.addFolder({title:"Per-letter Face Color"});
-      let faceColorProxy = {};
-      let faceColorBindings = [];
+      // Gradient controls
+      const bFaceGradA = fFace.addBinding(params, "faceGradA", { label: "A", view: "color" });
+      const bFaceStopA = fFace.addBinding(params, "faceStopA", { label: "A stop", min: 0, max: 1, step: 0.01 });
+      const bFaceGradB = fFace.addBinding(params, "faceGradB", { label: "B", view: "color" });
+      const bFaceStopB = fFace.addBinding(params, "faceStopB", { label: "B stop", min: 0, max: 1, step: 0.01 });
+      const bFaceGradC = fFace.addBinding(params, "faceGradC", { label: "C", view: "color" });
+      const bFaceStopC = fFace.addBinding(params, "faceStopC", { label: "C stop", min: 0, max: 1, step: 0.01 });
+      const bFaceDir = fFace.addBinding(params, "faceGradDir", { label: "dir", options: { Vertical: "vertical", Horizontal: "horizontal", Diagonal: "diagonal" } });
+
+      const fFaceChk = fFace.addFolder({ title: "Face Checker" });
+      fFaceChk.addBinding(params, "faceChkScale", { label: "scale", min: 4, max: 200, step: 1 });
+      fFaceChk.addBinding(params, "faceChkLineWidth", { label: "line width", min: 0, max: 40, step: 1 });
+      fFaceChk.addBinding(params, "faceChkRotate", { label: "rotate", min: 0, max: 360, step: 1 });
+      fFaceChk.addBinding(params, "faceChkColorA", { label: "square A", view: "color" });
+      fFaceChk.addBinding(params, "faceChkColorB", { label: "square B", view: "color" });
+      fFaceChk.addBinding(params, "faceChkLineColor", { label: "line", view: "color" });
+
+      // Per-letter face color controls
+      const fPerLetter = fFace.addFolder({ title: "Per-letter Colors" });
+      let faceProxy = {};
+      let faceBindings = [];
       let faceNoGlyphBlade = null;
 
-      function clearFaceColorBindings(){
-        for(const b of faceColorBindings){ try{ b.dispose?.(); }catch(e){} }
-        faceColorBindings.length = 0;
-        if(faceNoGlyphBlade){ try{ faceNoGlyphBlade.dispose?.(); }catch(e){} faceNoGlyphBlade=null; }
-      }
-      function syncFaceColorProxy(){
-        window.__ensureFacePerLetterColors?.();
-        faceColorProxy = {};
-        for(let i=0;i<params.facePerLetterColors.length;i++){
-          faceColorProxy["c"+i] = String(params.facePerLetterColors[i] || "#ffffff");
+      function ensureFaceArray() {
+        const n = window.__getCharCount();
+        if (!Array.isArray(params.faceLetterColors)) params.faceLetterColors = [];
+        if (params.faceLetterColors.length !== n) {
+          const next = new Array(n);
+          for (let i = 0; i < n; i++) next[i] = String(params.faceLetterColors[i] ?? "#ffffff");
+          params.faceLetterColors = next;
         }
       }
-      function syncFaceColorParams(){
-        for(let i=0;i<params.facePerLetterColors.length;i++){
-          params.facePerLetterColors[i] = String(faceColorProxy["c"+i] || "#ffffff");
+      function syncFaceProxyFromParams() {
+        ensureFaceArray();
+        faceProxy = {};
+        for (let i = 0; i < params.faceLetterColors.length; i++) {
+          faceProxy["c" + i] = String(params.faceLetterColors[i] || "#ffffff");
         }
       }
-      function rebuildFaceColorControls(){
-        clearFaceColorBindings();
-        window.__ensureFacePerLetterColors?.();
-        syncFaceColorProxy();
-
-        const n = params.facePerLetterColors.length;
-        if(n===0){
-          faceNoGlyphBlade = fFacePer.addBlade({view:"text", value:"(No glyphs)"});
+      function syncFaceParamsFromProxy() {
+        for (let i = 0; i < params.faceLetterColors.length; i++) {
+          params.faceLetterColors[i] = String(faceProxy["c" + i] || "#ffffff");
+        }
+      }
+      function clearFaceBindings() {
+        for (const b of faceBindings) {
+          try {
+            b.dispose?.();
+          } catch (e) {}
+        }
+        faceBindings.length = 0;
+        if (faceNoGlyphBlade) {
+          try {
+            faceNoGlyphBlade.dispose?.();
+          } catch (e) {}
+          faceNoGlyphBlade = null;
+        }
+      }
+      function rebuildFaceColorControls() {
+        ensureFaceArray();
+        clearFaceBindings();
+        syncFaceProxyFromParams();
+        const n = params.faceLetterColors.length;
+        if (n === 0) {
+          faceNoGlyphBlade = fPerLetter.addBlade({ view: "text", value: "(No glyphs)" });
           return;
         }
-        for(let i=0;i<n;i++){
-          const b = fFacePer.addBinding(faceColorProxy, "c"+i, { label: String(i+1), view:"color" });
-          b.on("change", ()=>{
-            syncFaceColorParams();
-            window.__applyFacePerLetterColors?.();
+        for (let i = 0; i < n; i++) {
+          const b = fPerLetter.addBinding(faceProxy, "c" + i, { label: String(i + 1), view: "color" });
+          b.on("change", () => {
+            syncFaceParamsFromProxy();
+            try {
+              window.__applyPerLetterFaceMats?.();
+            } catch (e) {}
           });
-          faceColorBindings.push(b);
+          faceBindings.push(b);
         }
       }
       window.__rebuildFaceColorControls = rebuildFaceColorControls;
 
-      function refreshFaceUI(){
-        fFaceChk.element.style.display = (params.faceMode==="checker") ? "" : "none";
-        fFacePer.element.style.display = (params.faceMode==="perLetter") ? "" : "none";
+      fPerLetter.addButton({ title: "Randomize" }).on("click", () => {
+        ensureFaceArray();
+        for (let i = 0; i < params.faceLetterColors.length; i++) {
+          const r = Math.floor(Math.random() * 255).toString(16).padStart(2, "0");
+          const g = Math.floor(Math.random() * 255).toString(16).padStart(2, "0");
+          const b = Math.floor(Math.random() * 255).toString(16).padStart(2, "0");
+          params.faceLetterColors[i] = `#${r}${g}${b}`;
+        }
+        syncFaceProxyFromParams();
+        faceBindings.forEach((b) => b.refresh());
+        try {
+          window.__applyPerLetterFaceMats?.();
+        } catch (e) {}
+      });
+      fPerLetter.addButton({ title: "Reset" }).on("click", () => {
+        ensureFaceArray();
+        params.faceLetterColors.fill("#ffffff");
+        syncFaceProxyFromParams();
+        faceBindings.forEach((b) => b.refresh());
+        try {
+          window.__applyPerLetterFaceMats?.();
+        } catch (e) {}
+      });
+
+      function refreshFaceUI() {
+        const m = params.faceMode;
+
+        // UV hidden for checker + perLetter (checker is forced world in core)
+        bFaceUV.element.style.display = m === "gradient" ? "" : "none";
+
+        // Solid visible only in solid
+        bFaceSolid.element.style.display = m === "solid" ? "" : "none";
+
+        // Gradient controls visible only in gradient
+        const gradOn = m === "gradient";
+        [bFaceGradA, bFaceStopA, bFaceGradB, bFaceStopB, bFaceGradC, bFaceStopC, bFaceDir].forEach((b) => {
+          b.element.style.display = gradOn ? "" : "none";
+        });
+
+        // Checker folder visible only in checker
+        fFaceChk.element.style.display = m === "checker" ? "" : "none";
+
+        // Per-letter folder visible only in perLetter
+        fPerLetter.element.style.display = m === "perLetter" ? "" : "none";
       }
       refreshFaceUI();
-      rebuildFaceColorControls();
 
-      const fSide=fFill.addFolder({title:"Extrusion"});
-      fSide.addBinding(params,"sideMode",{label:"mode",options:{Solid:"solid",Gradient:"gradient"}});
-      fSide.addBinding(params,"sideUVSpace",{label:"UV",options:{Glyph:"glyph",World:"world"}});
-      fSide.addBinding(params,"sideSolid",{view:"color"});
-      fSide.addBinding(params,"sideGradA",{label:"A",view:"color"}); fSide.addBinding(params,"sideStopA",{label:"A stop",min:0,max:1,step:.01});
-      fSide.addBinding(params,"sideGradB",{label:"B",view:"color"}); fSide.addBinding(params,"sideStopB",{label:"B stop",min:0,max:1,step:.01});
-      fSide.addBinding(params,"sideGradC",{label:"C",view:"color"}); fSide.addBinding(params,"sideStopC",{label:"C stop",min:0,max:1,step:.01});
-      fSide.addBinding(params,"sideGradDir",{label:"dir",options:{Vertical:"vertical",Horizontal:"horizontal",Diagonal:"diagonal"}});
+      const fSide = fFill.addFolder({ title: "Extrusion" });
+      fSide.addBinding(params, "sideMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient" } });
+      fSide.addBinding(params, "sideUVSpace", { label: "UV", options: { Glyph: "glyph", World: "world" } });
+      fSide.addBinding(params, "sideSolid", { view: "color" });
+      fSide.addBinding(params, "sideGradA", { label: "A", view: "color" });
+      fSide.addBinding(params, "sideStopA", { label: "A stop", min: 0, max: 1, step: 0.01 });
+      fSide.addBinding(params, "sideGradB", { label: "B", view: "color" });
+      fSide.addBinding(params, "sideStopB", { label: "B stop", min: 0, max: 1, step: 0.01 });
+      fSide.addBinding(params, "sideGradC", { label: "C", view: "color" });
+      fSide.addBinding(params, "sideStopC", { label: "C stop", min: 0, max: 1, step: 0.01 });
+      fSide.addBinding(params, "sideGradDir", { label: "dir", options: { Vertical: "vertical", Horizontal: "horizontal", Diagonal: "diagonal" } });
 
-      const fGrad=tLook.addFolder({title:"Gradient Animation"});
-      const fFaceGrad=fGrad.addFolder({title:"Faces"});
-      fFaceGrad.addBinding(params,"faceGradAnimOn",{label:"enabled"});
-      fFaceGrad.addBinding(params,"faceGradSpeed",{label:"speed",min:0,max:0.25,step:0.005});
-      fFaceGrad.addBinding(params,"faceGradAngle",{label:"angle",min:0,max:360,step:1});
+      const fGrad = tLook.addFolder({ title: "Gradient Animation" });
+      const fFaceGrad = fGrad.addFolder({ title: "Faces" });
+      fFaceGrad.addBinding(params, "faceGradAnimOn", { label: "enabled" });
+      fFaceGrad.addBinding(params, "faceGradSpeed", { label: "speed", min: 0, max: 0.25, step: 0.005 });
+      fFaceGrad.addBinding(params, "faceGradAngle", { label: "angle", min: 0, max: 360, step: 1 });
 
-      const fSideGrad=fGrad.addFolder({title:"Extrusion"});
-      fSideGrad.addBinding(params,"sideGradAnimOn",{label:"enabled"});
-      fSideGrad.addBinding(params,"sideGradSpeed",{label:"speed",min:0,max:0.25,step:0.005});
-      fSideGrad.addBinding(params,"sideGradAngle",{label:"angle",min:0,max:360,step:1});
+      const fSideGrad = fGrad.addFolder({ title: "Extrusion" });
+      fSideGrad.addBinding(params, "sideGradAnimOn", { label: "enabled" });
+      fSideGrad.addBinding(params, "sideGradSpeed", { label: "speed", min: 0, max: 0.25, step: 0.005 });
+      fSideGrad.addBinding(params, "sideGradAngle", { label: "angle", min: 0, max: 360, step: 1 });
 
-      const fBright=tLook.addFolder({title:"Brightness"});
-      fBright.addBinding(params,"faceBright",{label:"face",min:0,max:3,step:.01});
-      fBright.addBinding(params,"sideBright",{label:"extrusion",min:0,max:3,step:.01});
+      const fBright = tLook.addFolder({ title: "Brightness" });
+      fBright.addBinding(params, "faceBright", { label: "face", min: 0, max: 3, step: 0.01 });
+      fBright.addBinding(params, "sideBright", { label: "extrusion", min: 0, max: 3, step: 0.01 });
 
-      const fStroke=tLook.addFolder({title:"Stroke"});
-      fStroke.addBinding(params,"stroke",{view:"color"});
-      fStroke.addBinding(params,"strokeWidth",{label:"width",min:0,max:12,step:1});
-      fStroke.addBinding(params,"edgeThreshold",{label:"edge detect",min:0,max:30,step:.5});
-      fStroke.addBinding(params,"strokeFacesOnly",{label:"faces only"});
+      const fStroke = tLook.addFolder({ title: "Stroke" });
+      fStroke.addBinding(params, "stroke", { view: "color" });
+      fStroke.addBinding(params, "strokeWidth", { label: "width", min: 0, max: 12, step: 1 });
+      fStroke.addBinding(params, "edgeThreshold", { label: "edge detect", min: 0, max: 30, step: 0.5 });
+      fStroke.addBinding(params, "strokeFacesOnly", { label: "faces only" });
 
-      const fFx=tLook.addFolder({title:"Effects"});
-      const fHalf=fFx.addFolder({title:"Halftone"});
-      fHalf.addBinding(params,"halftoneOn",{label:"enabled"});
-      fHalf.addBinding(params,"halftoneTarget",{label:"target",options:{Both:"both",Faces:"face",Extrusion:"side"}});
-      fHalf.addBinding(params,"halftoneScale",{label:"scale",min:10,max:400,step:1});
-      fHalf.addBinding(params,"halftoneAngle",{label:"angle",min:0,max:90,step:1});
-      fHalf.addBinding(params,"halftoneStrength",{label:"strength",min:0,max:1,step:.01});
-      fHalf.addBinding(params,"halftoneSoftness",{label:"soft",min:0.01,max:.49,step:.01});
+      const fFx = tLook.addFolder({ title: "Effects" });
+      const fHalf = fFx.addFolder({ title: "Halftone" });
+      fHalf.addBinding(params, "halftoneOn", { label: "enabled" });
+      fHalf.addBinding(params, "halftoneTarget", { label: "target", options: { Both: "both", Faces: "face", Extrusion: "side" } });
+      fHalf.addBinding(params, "halftoneScale", { label: "scale", min: 10, max: 400, step: 1 });
+      fHalf.addBinding(params, "halftoneAngle", { label: "angle", min: 0, max: 90, step: 1 });
+      fHalf.addBinding(params, "halftoneStrength", { label: "strength", min: 0, max: 1, step: 0.01 });
+      fHalf.addBinding(params, "halftoneSoftness", { label: "soft", min: 0.01, max: 0.49, step: 0.01 });
 
-      const fGr=tLook.addFolder({title:"Grain"});
-      fGr.addBinding(params,"grainOn",{label:"enabled"});
-      fGr.addBinding(params,"grainTarget",{label:"target",options:{Both:"both",Faces:"face",Extrusion:"side"}});
-      fGr.addBinding(params,"grainAmount",{label:"amount",min:0,max:.6,step:.01});
-      fGr.addBinding(params,"grainScale",{label:"scale",min:20,max:900,step:1});
-      fGr.addBinding(params,"grainSpeed",{label:"speed",min:0,max:2,step:.01});
+      const fGr = tLook.addFolder({ title: "Grain" });
+      fGr.addBinding(params, "grainOn", { label: "enabled" });
+      fGr.addBinding(params, "grainTarget", { label: "target", options: { Both: "both", Faces: "face", Extrusion: "side" } });
+      fGr.addBinding(params, "grainAmount", { label: "amount", min: 0, max: 0.6, step: 0.01 });
+      fGr.addBinding(params, "grainScale", { label: "scale", min: 20, max: 900, step: 1 });
+      fGr.addBinding(params, "grainSpeed", { label: "speed", min: 0, max: 2, step: 0.01 });
 
-      const fLight=tLook.addFolder({title:"Lighting"});
-      fLight.addBinding(params,"lightingMode",{options:{Accurate:"accurate",Studio:"studio"}});
+      const fLight = tLook.addFolder({ title: "Lighting" });
+      fLight.addBinding(params, "lightingMode", { options: { Accurate: "accurate", Studio: "studio" } });
 
-      const fCam=tLook.addFolder({title:"Camera"});
-      fCam.addBinding(params,"cameraPreset",{options:{Front:"front","Iso Left":"isoLeft","Iso Right":"isoRight"}});
-      fCam.addButton({title:"Apply preset"}).on("click",()=>window.applyCameraPreset());
-      fCam.addButton({title:"Reframe"}).on("click",()=>window.reframeToText());
+      const fCam = tLook.addFolder({ title: "Camera" });
+      fCam.addBinding(params, "cameraPreset", { options: { Front: "front", "Iso Left": "isoLeft", "Iso Right": "isoRight" } });
+      fCam.addButton({ title: "Apply preset" }).on("click", () => window.applyCameraPreset());
+      fCam.addButton({ title: "Reframe" }).on("click", () => window.reframeToText());
 
       // ---------------------------
       // Motion
       // ---------------------------
-      const fAnim=tMotion.addFolder({title:"Animation"});
-      fAnim.addBinding(params,"animPreset",{label:"preset",options:{
-        "Depth":"depth",
-        "Twist":"twist",
-        "Wobble":"wobble",
-        "Inflate":"inflate",
-        "Spin":"spin",
-        "Explode":"explode"
-      }});
-      fAnim.addBinding(params,"animSpeed",{label:"speed",min:.1,max:4,step:.05});
-      fAnim.addBinding(params,"animStagger",{label:"stagger",min:0,max:.3,step:.005});
-      fAnim.addBinding(params,"animEase",{label:"ease",options:{
-        "power2.inOut":"power2.inOut",
-        "sine.inOut":"sine.inOut",
-        "expo.inOut":"expo.inOut",
-        "elastic.out(1,0.35)":"elastic.out(1,0.35)",
-        "steps(6)":"steps(6)"
-      }});
-      fAnim.addBinding(params,"animLoop",{label:"loop"});
-      fAnim.addBinding(params,"animStaggerMode",{label:"stagger by",options:{Character:"char",Word:"word",Line:"line"}});
-      fAnim.addBinding(params,"animStaggerFrom",{label:"direction",options:{Start:"start",End:"end",Center:"center",Edges:"edges",Random:"random"}});
-      fAnim.addBinding(params,"animMinPct",{label:"min % depth",min:0,max:100,step:1});
-      fAnim.addBinding(params,"animMaxPct",{label:"max % depth",min:0,max:200,step:1});
-      fAnim.addBinding(params,"animAxis",{label:"axis",options:{X:"x",Y:"y",Z:"z"}});
-      fAnim.addBinding(params,"animRotateDeg",{label:"rotate deg",min:0,max:180,step:1});
-      fAnim.addBinding(params,"animInflate",{label:"inflate",min:0,max:.6,step:.01});
-      fAnim.addBinding(params,"animAlsoDepth",{label:"also depth"});
+      const fAnim = tMotion.addFolder({ title: "Animation" });
+      fAnim.addBinding(params, "animPreset", {
+        label: "preset",
+        options: {
+          Depth: "depth",
+          Twist: "twist",
+          Wobble: "wobble",
+          Inflate: "inflate",
+          Spin: "spin",
+          Explode: "explode",
+        },
+      });
+      fAnim.addBinding(params, "animSpeed", { label: "speed", min: 0.1, max: 4, step: 0.05 });
+      fAnim.addBinding(params, "animStagger", { label: "stagger", min: 0, max: 0.3, step: 0.005 });
+      fAnim.addBinding(params, "animEase", {
+        label: "ease",
+        options: {
+          "power2.inOut": "power2.inOut",
+          "sine.inOut": "sine.inOut",
+          "expo.inOut": "expo.inOut",
+          "elastic.out(1,0.35)": "elastic.out(1,0.35)",
+          "steps(6)": "steps(6)",
+        },
+      });
+      fAnim.addBinding(params, "animLoop", { label: "loop" });
+      fAnim.addBinding(params, "animStaggerMode", { label: "stagger by", options: { Character: "char", Word: "word", Line: "line" } });
+      fAnim.addBinding(params, "animStaggerFrom", { label: "direction", options: { Start: "start", End: "end", Center: "center", Edges: "edges", Random: "random" } });
+      fAnim.addBinding(params, "animMinPct", { label: "min % depth", min: 0, max: 100, step: 1 });
+      fAnim.addBinding(params, "animMaxPct", { label: "max % depth", min: 0, max: 200, step: 1 });
+      fAnim.addBinding(params, "animAxis", { label: "axis", options: { X: "x", Y: "y", Z: "z" } });
+      fAnim.addBinding(params, "animRotateDeg", { label: "rotate deg", min: 0, max: 180, step: 1 });
+      fAnim.addBinding(params, "animInflate", { label: "inflate", min: 0, max: 0.6, step: 0.01 });
+      fAnim.addBinding(params, "animAlsoDepth", { label: "also depth" });
 
-      const fPresetEx=tMotion.addFolder({title:"Preset Tuning"});
-      fPresetEx.addBinding(params,"animSpinDeg",{label:"spin deg",min:0,max:1440,step:5});
-      fPresetEx.addBinding(params,"animExplodeAmount",{label:"explode amt",min:0,max:800,step:5});
-      fPresetEx.addBinding(params,"animExplodeTwistDeg",{label:"explode twist",min:0,max:180,step:1});
+      const fPresetEx = tMotion.addFolder({ title: "Preset Tuning" });
+      fPresetEx.addBinding(params, "animSpinDeg", { label: "spin deg", min: 0, max: 1440, step: 5 });
+      fPresetEx.addBinding(params, "animExplodeAmount", { label: "explode amt", min: 0, max: 800, step: 5 });
+      fPresetEx.addBinding(params, "animExplodeTwistDeg", { label: "explode twist", min: 0, max: 180, step: 1 });
 
-      fAnim.addButton({title:"Play"}).on("click",()=>{window.__tp_animPlaying=true;window.playAnimation();});
-      fAnim.addButton({title:"Stop"}).on("click",()=>{window.__tp_animPlaying=false;window.stopAnimation();});
+      fAnim.addButton({ title: "Play" }).on("click", () => {
+        window.__tp_animPlaying = true;
+        window.playAnimation();
+      });
+      fAnim.addButton({ title: "Stop" }).on("click", () => {
+        window.__tp_animPlaying = false;
+        window.stopAnimation();
+      });
 
-      const fIdle=tMotion.addFolder({title:"Idle Wave"});
-      fIdle.addBinding(params,"waveOn",{label:"enabled"});
-      fIdle.addBinding(params,"waveBy",{label:"by",options:{X:"x",Line:"line"}});
-      fIdle.addBinding(params,"waveSpeed",{label:"speed",min:0,max:2,step:.01});
-      fIdle.addBinding(params,"waveAmpY",{label:"amp Y",min:0,max:40,step:1});
-      fIdle.addBinding(params,"waveRotDeg",{label:"rot deg",min:0,max:25,step:1});
-      fIdle.addBinding(params,"waveFreq",{label:"freq",min:0.01,max:0.30,step:0.01});
+      const fIdle = tMotion.addFolder({ title: "Idle Wave" });
+      fIdle.addBinding(params, "waveOn", { label: "enabled" });
+      fIdle.addBinding(params, "waveBy", { label: "by", options: { X: "x", Line: "line" } });
+      fIdle.addBinding(params, "waveSpeed", { label: "speed", min: 0, max: 2, step: 0.01 });
+      fIdle.addBinding(params, "waveAmpY", { label: "amp Y", min: 0, max: 40, step: 1 });
+      fIdle.addBinding(params, "waveRotDeg", { label: "rot deg", min: 0, max: 25, step: 1 });
+      fIdle.addBinding(params, "waveFreq", { label: "freq", min: 0.01, max: 0.3, step: 0.01 });
 
-      const fBreath=tMotion.addFolder({title:"Breathing Extrusion"});
-      fBreath.addBinding(params,"breathOn",{label:"enabled"});
-      fBreath.addBinding(params,"breathSpeed",{label:"speed",min:0,max:2,step:.01});
-      fBreath.addBinding(params,"breathAmount",{label:"amount",min:0,max:0.20,step:0.005});
+      const fBreath = tMotion.addFolder({ title: "Breathing Extrusion" });
+      fBreath.addBinding(params, "breathOn", { label: "enabled" });
+      fBreath.addBinding(params, "breathSpeed", { label: "speed", min: 0, max: 2, step: 0.01 });
+      fBreath.addBinding(params, "breathAmount", { label: "amount", min: 0, max: 0.2, step: 0.005 });
 
-      const fHover=tMotion.addFolder({title:"Hover"});
-      fHover.addBinding(params,"hoverMode",{label:"mode",options:{
-        Lift:"lift",
-        Rotate:"rotate",
-        Tilt:"tilt",
-        Pulse:"pulse",
-        Repel:"repel",
-        Spin:"spin",
-        "Spin 360":"spin360",
-        Explode:"explode",
-        None:"none"
-      }});
-      fHover.addBinding(params,"proximityLift",{label:"enabled"});
-      fHover.addBinding(params,"proximityRadiusWorld",{label:"radius",min:10,max:800,step:1});
-      fHover.addBinding(params,"proximityLiftAmount",{label:"lift",min:0,max:400,step:1});
-      fHover.addBinding(params,"hoverRotateDeg",{label:"rotate",min:0,max:180,step:1});
-      fHover.addBinding(params,"hoverTiltDeg",{label:"tilt",min:0,max:90,step:1});
-      fHover.addBinding(params,"hoverPulse",{label:"pulse",min:0,max:.8,step:.01});
+      const fHover = tMotion.addFolder({ title: "Hover" });
+      fHover.addBinding(params, "hoverMode", {
+        label: "mode",
+        options: {
+          Lift: "lift",
+          Rotate: "rotate",
+          Tilt: "tilt",
+          Pulse: "pulse",
+          Repel: "repel",
+          Spin: "spin",
+          "Spin360 (Inertia)": "spin360",
+          Explode: "explode",
+          None: "none",
+        },
+      });
+      fHover.addBinding(params, "proximityLift", { label: "enabled" });
+      fHover.addBinding(params, "proximityRadiusWorld", { label: "radius", min: 10, max: 800, step: 1 });
+      fHover.addBinding(params, "proximityLiftAmount", { label: "lift", min: 0, max: 400, step: 1 });
+      fHover.addBinding(params, "hoverRotateDeg", { label: "rotate", min: 0, max: 180, step: 1 });
+      fHover.addBinding(params, "hoverTiltDeg", { label: "tilt", min: 0, max: 90, step: 1 });
+      fHover.addBinding(params, "hoverPulse", { label: "pulse", min: 0, max: 0.8, step: 0.01 });
 
-      const fHoverEx=tMotion.addFolder({title:"Hover Extras"});
+      const fHoverSpin = tMotion.addFolder({ title: "Hover Spin (mode: Spin)" });
+      fHoverSpin.addBinding(params, "hoverSpinDeg", { label: "spin deg", min: 0, max: 720, step: 5 });
+      fHoverSpin.addBinding(params, "hoverSpinAxis", { label: "axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
+      fHoverSpin.addBinding(params, "hoverSpinRandomDir", { label: "random dir" });
+      fHoverSpin.addBinding(params, "hoverSpinRandomAmount", { label: "random amount" });
+      fHoverSpin.addBinding(params, "hoverSpinAmountJitter", { label: "amount jitter", min: 0, max: 1, step: 0.01 });
 
-      // continuous spin controls
-      fHoverEx.addBinding(params,"hoverSpinDeg",{label:"spin deg",min:0,max:720,step:5});
-      fHoverEx.addBinding(params,"hoverSpinAxis",{label:"spin axis",options:{X:"x",Y:"y",Z:"z"}});
-      fHoverEx.addBinding(params,"hoverSpinRandomAxis",{label:"spin random axis"});
-      fHoverEx.addBinding(params,"hoverSpinRandomDir",{label:"spin random dir"});
+      const fHover360 = tMotion.addFolder({ title: "Hover Spin360 (mode: Spin360)" });
+      fHover360.addBinding(params, "hoverSpin360Axis", { label: "axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
+      fHover360.addBinding(params, "hoverSpin360RandomDir", { label: "random dir" });
+      fHover360.addBinding(params, "hoverSpin360Boost", { label: "boost", min: 0, max: 0.08, step: 0.001 });
+      fHover360.addBinding(params, "hoverSpin360MaxVel", { label: "max vel", min: 0.5, max: 30, step: 0.5 });
+      fHover360.addBinding(params, "hoverSpin360Damping", { label: "damping", min: 1, max: 20, step: 0.5 });
 
-      // spin360 controls
-      fHoverEx.addBinding(params,"hoverSpin360Axis",{label:"spin360 axis",options:{X:"x",Y:"y",Z:"z",Random:"random"}});
-      fHoverEx.addBinding(params,"hoverSpin360Turns",{label:"turns",min:0.25,max:4,step:0.25});
-      fHoverEx.addBinding(params,"hoverSpin360Inertia",{label:"inertia",min:0,max:0.98,step:0.01});
-      fHoverEx.addBinding(params,"hoverSpin360MinTrigger",{label:"trigger",min:0.01,max:0.5,step:0.01});
-      fHoverEx.addBinding(params,"hoverSpin360Boost",{label:"speed boost",min:0,max:10,step:0.1});
+      fHover.addBinding(params, "proximityFalloff", { label: "falloff", options: { linear: "linear", quadratic: "quadratic", smooth: "smooth" } });
+      fHover.addBinding(params, "cursorSmoothing", { label: "cursor smooth", min: 0, max: 0.98, step: 0.01 });
+      fHover.addBinding(params, "liftSmoothing", { label: "smooth", min: 0.01, max: 0.6, step: 0.01 });
 
-      // explode controls
-      fHoverEx.addBinding(params,"hoverExplodeAmount",{label:"explode amt",min:0,max:600,step:5});
-      fHoverEx.addBinding(params,"hoverExplodeTwistDeg",{label:"explode twist",min:0,max:180,step:1});
+      const fRepel = fHover.addFolder({ title: "Repel" });
+      fRepel.addBinding(params, "repelAmount", { label: "amount", min: 0, max: 400, step: 1 });
+      fRepel.addBinding(params, "repelMinDistance", { label: "min dist", min: 0.1, max: 40, step: 0.1 });
+      fRepel.addBinding(params, "repelClamp", { label: "clamp", min: 0, max: 600, step: 1 });
 
-      fHover.addBinding(params,"proximityFalloff",{label:"falloff",options:{linear:"linear",quadratic:"quadratic",smooth:"smooth"}});
-      fHover.addBinding(params,"cursorSmoothing",{label:"cursor smooth",min:0,max:.98,step:.01});
-      fHover.addBinding(params,"liftSmoothing",{label:"smooth",min:.01,max:.6,step:.01});
+      const fMag = tMotion.addFolder({ title: "Magnetic Sweep" });
+      fMag.addBinding(params, "magneticSweepOn", { label: "enabled" });
+      fMag.addBinding(params, "sweepAmount", { label: "amount", min: 0, max: 120, step: 1 });
+      fMag.addBinding(params, "sweepBias", { label: "bias", min: 0, max: 2, step: 0.01 });
+      fMag.addBinding(params, "sweepYMix", { label: "Y mix", min: 0, max: 1, step: 0.01 });
 
-      const fRepel=fHover.addFolder({title:"Repel"});
-      fRepel.addBinding(params,"repelAmount",{label:"amount",min:0,max:400,step:1});
-      fRepel.addBinding(params,"repelMinDistance",{label:"min dist",min:0.1,max:40,step:0.1});
-      fRepel.addBinding(params,"repelClamp",{label:"clamp",min:0,max:600,step:1});
-
-      const fMag=tMotion.addFolder({title:"Magnetic Sweep"});
-      fMag.addBinding(params,"magneticSweepOn",{label:"enabled"});
-      fMag.addBinding(params,"sweepAmount",{label:"amount",min:0,max:120,step:1});
-      fMag.addBinding(params,"sweepBias",{label:"bias",min:0,max:2,step:.01});
-      fMag.addBinding(params,"sweepYMix",{label:"Y mix",min:0,max:1,step:.01});
-
-      const fHeat=tMotion.addFolder({title:"Heat Bloom"});
-      fHeat.addBinding(params,"heatBloomOn",{label:"enabled"});
-      fHeat.addBinding(params,"heatRadiusWorld",{label:"radius",min:40,max:520,step:1});
-      fHeat.addBinding(params,"heatSoftness",{label:"soft",min:0,max:1,step:.01});
-      fHeat.addBinding(params,"heatBrightBoost",{label:"bright",min:0,max:1.5,step:.01});
-      fHeat.addBinding(params,"heatGrainBoost",{label:"grain boost",min:0,max:3,step:.01});
-      fHeat.addBinding(params,"heatHalfBoost",{label:"half boost",min:0,max:3,step:.01});
+      const fHeat = tMotion.addFolder({ title: "Heat Bloom" });
+      fHeat.addBinding(params, "heatBloomOn", { label: "enabled" });
+      fHeat.addBinding(params, "heatRadiusWorld", { label: "radius", min: 40, max: 520, step: 1 });
+      fHeat.addBinding(params, "heatSoftness", { label: "soft", min: 0, max: 1, step: 0.01 });
+      fHeat.addBinding(params, "heatBrightBoost", { label: "bright", min: 0, max: 1.5, step: 0.01 });
+      fHeat.addBinding(params, "heatGrainBoost", { label: "grain boost", min: 0, max: 3, step: 0.01 });
+      fHeat.addBinding(params, "heatHalfBoost", { label: "half boost", min: 0, max: 3, step: 0.01 });
 
       // ---------------------------
       // Routing
       // ---------------------------
-      const FX_KEYS=new Set([
-        "halftoneOn","halftoneTarget","halftoneScale","halftoneAngle","halftoneStrength","halftoneSoftness",
-        "grainOn","grainTarget","grainAmount","grainScale","grainSpeed",
-        "faceBright","sideBright",
-        "heatBloomOn","heatRadiusWorld","heatSoftness","heatBrightBoost","heatGrainBoost","heatHalfBoost"
+      const FX_KEYS = new Set([
+        "halftoneOn",
+        "halftoneTarget",
+        "halftoneScale",
+        "halftoneAngle",
+        "halftoneStrength",
+        "halftoneSoftness",
+        "grainOn",
+        "grainTarget",
+        "grainAmount",
+        "grainScale",
+        "grainSpeed",
+        "faceBright",
+        "sideBright",
+        "heatBloomOn",
+        "heatRadiusWorld",
+        "heatSoftness",
+        "heatBrightBoost",
+        "heatGrainBoost",
+        "heatHalfBoost",
       ]);
 
-      const REBUILD_KEYS=new Set([
-        "aspect","margin","size","depth","charSpacing","lineSpacing","align",
-        "faceMode","faceUVSpace","faceSolid",
-        "faceGradA","faceGradB","faceGradC","faceStopA","faceStopB","faceStopC","faceGradDir",
-        "faceChkScale","faceChkLineWidth","faceChkRotate","faceChkColorA","faceChkColorB","faceChkLineColor",
-        "sideMode","sideUVSpace","sideSolid","sideGradA","sideGradB","sideGradC","sideStopA","sideStopB","sideStopC","sideGradDir",
-        "stroke","strokeWidth","edgeThreshold","strokeFacesOnly",
-        "lightingMode"
+      const REBUILD_KEYS = new Set([
+        "aspect",
+        "margin",
+        "size",
+        "depth",
+        "charSpacing",
+        "lineSpacing",
+        "align",
+        "faceMode",
+        "faceUVSpace",
+        "faceSolid",
+        "faceGradA",
+        "faceGradB",
+        "faceGradC",
+        "faceStopA",
+        "faceStopB",
+        "faceStopC",
+        "faceGradDir",
+        "faceChkScale",
+        "faceChkLineWidth",
+        "faceChkRotate",
+        "faceChkColorA",
+        "faceChkColorB",
+        "faceChkLineColor",
+        "sideMode",
+        "sideUVSpace",
+        "sideSolid",
+        "sideGradA",
+        "sideGradB",
+        "sideGradC",
+        "sideStopA",
+        "sideStopB",
+        "sideStopC",
+        "sideGradDir",
+        "stroke",
+        "strokeWidth",
+        "edgeThreshold",
+        "strokeFacesOnly",
+        "lightingMode",
       ]);
 
-      const ANIM_KEYS=new Set([
-        "animPreset","animSpeed","animStagger","animMinPct","animMaxPct","animEase","animLoop","animStaggerMode","animStaggerFrom",
-        "animRotateDeg","animInflate","animAlsoDepth","animAxis",
-        "animSpinDeg","animExplodeAmount","animExplodeTwistDeg"
+      const ANIM_KEYS = new Set([
+        "animPreset",
+        "animSpeed",
+        "animStagger",
+        "animMinPct",
+        "animMaxPct",
+        "animEase",
+        "animLoop",
+        "animStaggerMode",
+        "animStaggerFrom",
+        "animRotateDeg",
+        "animInflate",
+        "animAlsoDepth",
+        "animAxis",
+        "animSpinDeg",
+        "animExplodeAmount",
+        "animExplodeTwistDeg",
       ]);
 
-      const HOVER_KEYS=new Set([
-        "hoverMode","proximityLift","proximityRadiusWorld","proximityLiftAmount","hoverRotateDeg","hoverTiltDeg","hoverPulse",
-        "proximityFalloff","cursorSmoothing","liftSmoothing",
-        "repelAmount","repelMinDistance","repelClamp",
-        "hoverSpinDeg","hoverSpinAxis","hoverSpinRandomAxis","hoverSpinRandomDir",
-        "hoverSpin360Axis","hoverSpin360Turns","hoverSpin360Inertia","hoverSpin360MinTrigger","hoverSpin360Boost",
-        "hoverExplodeAmount","hoverExplodeTwistDeg"
+      const HOVER_KEYS = new Set([
+        "hoverMode",
+        "proximityLift",
+        "proximityRadiusWorld",
+        "proximityLiftAmount",
+        "hoverRotateDeg",
+        "hoverTiltDeg",
+        "hoverPulse",
+        "proximityFalloff",
+        "cursorSmoothing",
+        "liftSmoothing",
+        "repelAmount",
+        "repelMinDistance",
+        "repelClamp",
+        "hoverSpinDeg",
+        "hoverSpinAxis",
+        "hoverSpinRandomDir",
+        "hoverSpinRandomAmount",
+        "hoverSpinAmountJitter",
+        "hoverSpin360Axis",
+        "hoverSpin360RandomDir",
+        "hoverSpin360Boost",
+        "hoverSpin360MaxVel",
+        "hoverSpin360Damping",
       ]);
 
-      const GRAD_ANIM_KEYS=new Set([
-        "faceGradAnimOn","faceGradSpeed","faceGradAngle",
-        "sideGradAnimOn","sideGradSpeed","sideGradAngle"
-      ]);
+      const GRAD_ANIM_KEYS = new Set(["faceGradAnimOn", "faceGradSpeed", "faceGradAngle", "sideGradAnimOn", "sideGradSpeed", "sideGradAngle"]);
 
-      const BG_KEYS=new Set(["bgMode","bgSolid","bgGradA","bgGradB","bgGradAngle","bgGradSoft"]);
+      pane.on("change", (ev) => {
+        const k = ev?.target?.key;
+        if (!k) return;
 
-      pane.on("change",(ev)=>{
-        const k=ev?.target?.key;
-        if(!k) return;
+        if (k === "fontSource" || k === "fontPreset" || k === "fontUrl") return;
 
-        if(k==="fontSource" || k==="fontPreset" || k==="fontUrl") return;
+        if (k === "faceMode") {
+          refreshFaceUI();
+          // if switching to perLetter, ensure controls exist
+          setTimeout(() => {
+            try {
+              rebuildFaceColorControls();
+            } catch (e) {}
+          }, 0);
+        }
 
-        if(k==="faceMode"){ refreshFaceUI(); }
-
-        if(BG_KEYS.has(k)){ rebuildBg(); return; }
-
-        if(FX_KEYS.has(k)){ window._syncFXUniforms(); return; }
-        if(GRAD_ANIM_KEYS.has(k)){ return; }
-
-        if(k==="cameraPreset"){ window.applyCameraPreset(); return; }
-
-        // per-letter face colors apply live
-        if(k.startsWith("facePerLetterColors")){ window.__applyFacePerLetterColors?.(); return; }
-
-        if(HOVER_KEYS.has(k)){
-          // hover runs every frame
+        if (k === "bgMode" || k === "bgSolid" || k === "bgGradA" || k === "bgGradB" || k === "bgGradAngle" || k === "bgGradSoft") {
+          refreshBgUI();
+          rebuildBg();
           return;
         }
 
-        if(ANIM_KEYS.has(k)){
-          if(window.__tp_animPlaying) window.playAnimation();
+        if (FX_KEYS.has(k)) {
+          window._syncFXUniforms();
+          return;
+        }
+        if (GRAD_ANIM_KEYS.has(k)) {
           return;
         }
 
-        if(REBUILD_KEYS.has(k)){
-          if(k==="lightingMode") window.applyLightingMode();
+        if (k === "cameraPreset") {
+          window.applyCameraPreset();
+          return;
+        }
+
+        if (HOVER_KEYS.has(k)) {
+          // hover runs every frame; no rebuild needed
+          return;
+        }
+
+        if (ANIM_KEYS.has(k)) {
+          if (window.__tp_animPlaying) window.playAnimation();
+          return;
+        }
+
+        if (k === "faceLetterColors") {
+          try {
+            window.__applyPerLetterFaceMats?.();
+          } catch (e) {}
+          return;
+        }
+
+        if (REBUILD_KEYS.has(k)) {
+          if (k === "lightingMode") window.applyLightingMode();
           window.rebuildFillMaterials();
           window.buildText();
-          try{ window.__rebuildZControls?.(); }catch(e){}
-          try{ window.__rebuildFaceColorControls?.(); }catch(e){}
-          if(window.__tp_animPlaying) window.playAnimation();
+          try {
+            window.__rebuildZControls?.();
+          } catch (e) {}
+          try {
+            window.__rebuildFaceColorControls?.();
+          } catch (e) {}
+          if (window.__tp_animPlaying) window.playAnimation();
           return;
         }
       });
 
+      // Initial build
       window.buildText();
       window._syncFXUniforms();
-      try{ window.__rebuildZControls?.(); }catch(e){}
-      try{ window.__rebuildFaceColorControls?.(); }catch(e){}
+
+      // Build per-letter controls after text exists
+      rebuildZControls();
+      rebuildFaceColorControls();
 
       attachRescueToTabClicks();
 
-      window.__tp_ui_cleanup = ()=>{
-        try{ ta.removeEventListener("input", onTextInput); }catch(e){}
-        try{ window.removeEventListener("keydown", onKeyDown, true); }catch(e){}
-        try{ pane.dispose(); }catch(e){}
+      window.__tp_ui_cleanup = () => {
+        try {
+          ta.removeEventListener("input", onTextInput);
+        } catch (e) {}
+        try {
+          window.removeEventListener("keydown", onKeyDown, true);
+        } catch (e) {}
+        try {
+          pane.dispose();
+        } catch (e) {}
       };
     }
 

@@ -2134,6 +2134,7 @@ function updateHoverEffects() {
 
   // Spin360: trigger ONLY on actual mesh hover enter (raycast)
  // Spin360: trigger ONLY on actual mesh hover enter (raycast)
+// Spin360: trigger ONLY on actual mesh hover enter (raycast)
 if (hoverMode === "spin360") {
   const idx = _raycastGlyphIndexUnderCursor();
   const allowed = _hoverStrength >= minHoverF;
@@ -2157,13 +2158,12 @@ if (hoverMode === "spin360") {
     }
   }
 } else {
+  // not in spin360 mode -> ensure state clears
   _spin360MissFrames = 0;
 
   if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
   _hoveredGlyphIdx = -1;
-}
-
-} else {
+}else {
   // leaving spin360 mode entirely
   if (_hoveredGlyphIdx >= 0) {
     _spin360Reset(glyphs[_hoveredGlyphIdx]);
@@ -2426,6 +2426,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

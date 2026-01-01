@@ -1217,6 +1217,14 @@ function buildGlyph(ch) {
 
   let geo = new THREE.ExtrudeGeometry(shapes, { depth: params.depth, bevelEnabled: false, steps: 1 });
   geo.translate(-left, 0, 0);
+  geo.computeBoundingBox();
+const gbb = geo.boundingBox;
+const center = {
+  x: (gbb.min.x + gbb.max.x) * 0.5,
+  y: (gbb.min.y + gbb.max.y) * 0.5,
+  z: (gbb.min.z + gbb.max.z) * 0.5,
+};
+
   if (geo.index) geo = geo.toNonIndexed();
   writeUVsNonIndexed_Local(geo, params.depth);
 
@@ -1247,18 +1255,23 @@ function buildGlyph(ch) {
   stroke.computeLineDistances();
   stroke.isLineSegments2 = true;
 
-  return { width, mesh, stroke };
+  return { width, mesh, stroke, center };
 }
 
 function applyExtrusionTransform(entry) {
   const d = entry.baseDepth;
   const sZ = entry.mesh.scale.z;
-  entry.mesh.position.z = (d * sZ) / 2;
+
+  // keep glyph centered around pivot in Z
+  const cz = (entry._geoCenterZ ?? (d * 0.5));
+  entry.mesh.position.z = -cz * sZ;
+
   if (entry.stroke) {
     entry.stroke.position.z = entry.mesh.position.z;
     entry.stroke.scale.z = entry.mesh.scale.z;
   }
 }
+
 
 function _updateDepth(entry) {
   const breath = entry._breathMul ?? 1;
@@ -1413,17 +1426,28 @@ function buildText() {
         continue;
       }
 
-      const { mesh, stroke } = e.glyph;
+      const { mesh, stroke, center } = e.glyph;
 
-      const group = new THREE.Group();
-      group.position.set(x, y, 0);
+const group = new THREE.Group();
+group.position.set(x, y, 0);
 
-      const inner = new THREE.Group();
-      inner.add(mesh);
-      if (params.strokeWidth > 0) inner.add(stroke);
-      group.add(inner);
+// inner is used by idle wave (keeps your current behavior)
+const inner = new THREE.Group();
+group.add(inner);
 
-      textGroup.add(group);
+// pivot is the "true rotation anchor" (center of glyph)
+const pivot = new THREE.Group();
+inner.add(pivot);
+
+// center the mesh/stroke around pivot origin
+mesh.position.set(-center.x, -center.y, -center.z);
+if (params.strokeWidth > 0) stroke.position.set(-center.x, -center.y, -center.z);
+
+pivot.add(mesh);
+if (params.strokeWidth > 0) pivot.add(stroke);
+
+textGroup.add(group);
+
 
       const idx = globalGlyphIndex;
 
@@ -1445,15 +1469,20 @@ function buildText() {
         inner,
         mesh,
         stroke,
+        _spin360PendingReset: false,
+          _geoCenterZ: center.z, // store this
+
 
         baseDepth: params.depth,
 
         baseGroupX: group.position.x,
         baseGroupY: group.position.y,
         baseGroupZ: group.position.z,
-        baseRotX: group.rotation.x,
-        baseRotY: group.rotation.y,
-        baseRotZ: group.rotation.z,
+        pivot,
+baseRotX: pivot.rotation.x,
+baseRotY: pivot.rotation.y,
+baseRotZ: pivot.rotation.z,
+
         baseScaleX: group.scale.x,
         baseScaleY: group.scale.y,
         baseScaleZ: group.scale.z,
@@ -1655,9 +1684,12 @@ function stopAnimation() {
     g.animRotZ = 0;
     g.animScale = 1;
 
-    g.group.rotation.x = g.baseRotX || 0;
-    g.group.rotation.y = g.baseRotY || 0;
-    g.group.rotation.z = g.baseRotZ || 0;
+   g.pivot.rotation.x = g.baseRotX || 0;
+g.pivot.rotation.y = g.baseRotY || 0;
+g.pivot.rotation.z = g.baseRotZ || 0;
+g.group.rotation.set(0,0,0);
+g.pivot.rotation.set(g.baseRotX||0, g.baseRotY||0, g.baseRotZ||0);
+
     g.group.scale.set(g.baseScaleX || 1, g.baseScaleY || 1, g.baseScaleZ || 1);
 
     _updateDepth(g);
@@ -1804,9 +1836,10 @@ function playAnimation() {
       m.animRotZ = arz;
       m.animScale = asc;
 
-      m.group.rotation.x = (m.baseRotX || 0) + m.animRotX;
-      m.group.rotation.y = (m.baseRotY || 0) + m.animRotY;
-      m.group.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
+      m.pivot.rotation.x = (m.baseRotX || 0) + m.animRotX;
+      m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
+      m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
+
 
       const bsx = m.baseScaleX || 1,
         bsy = m.baseScaleY || 1,
@@ -1894,10 +1927,11 @@ const _cursorDelta = new THREE.Vector3();
 let _prevCursorLocal = new THREE.Vector3(0, 0, 0);
 let _cursorSpeed = 0; // smoothed units/sec
 
-let _hoveredGlyphIdx = -1;
+let _spin360PrevIdx = -1;          // last raycast-hit glyph index
+let _spin360PrevGlyph = null;      // actual glyph ref for easier handling
 let _spin360MissFrames = 0;
 const SPIN360_MISS_FRAMES_BEFORE_RESET = 8; // ~8 frames = ~130ms @60fps
-const SPIN360_RETRIGGER_COOLDOWN = 0.12; // seconds
+
 
 
 function _updatePointerFromEvent(e) {
@@ -1919,11 +1953,21 @@ function onPointerLeave() {
   pointerActive = false;
   _hoverStrength = 0;
 
-  if (_hoveredGlyphIdx >= 0) {
-    _spin360Reset(glyphs[_hoveredGlyphIdx]);
+  // If we were on a glyph, mark it as "left".
+  if (_spin360PrevGlyph) {
+    // if it's spinning, let it finish then reset
+    if (_spin360PrevGlyph._spin360Busy || _spin360PrevGlyph._spin360Lock) {
+      _spin360PrevGlyph._spin360PendingReset = true;
+    } else {
+      _spin360Reset(_spin360PrevGlyph);
+    }
   }
-  _hoveredGlyphIdx = -1;
+
+  _spin360PrevIdx = -1;
+  _spin360PrevGlyph = null;
+  _spin360MissFrames = 0;
 }
+
 
 
 function getCursorLocalOnTextPlane(outLocal) {
@@ -1982,15 +2026,22 @@ function _spin360Trigger(g) {
     duration: dur,
     ease,
     overwrite: true,
-    onComplete: () => {
-      g._spin360Busy = false;
-      g._spin360Lock = false;
+   onComplete: () => {
+  g._spin360Busy = false;
+  g._spin360Lock = false;
 
-      // prevent runaway growth
-      if (Math.abs(g._spin360Add) > Math.PI * 50) {
-        g._spin360Add = g._spin360Add % (Math.PI * 2);
-      }
-    },
+  // prevent runaway growth
+  if (Math.abs(g._spin360Add) > Math.PI * 50) {
+    g._spin360Add = g._spin360Add % (Math.PI * 2);
+  }
+
+  // If cursor left while spinning, reset now
+  if (g._spin360PendingReset) {
+    g._spin360PendingReset = false;
+    _spin360Reset(g);
+  }
+},
+
   });
 }
 
@@ -2045,9 +2096,10 @@ function resetHoverTransforms() {
       else brz += add;
     }
 
-    g.group.rotation.x = lerp(g.group.rotation.x, brx, chase);
-    g.group.rotation.y = lerp(g.group.rotation.y, bry, chase);
-    g.group.rotation.z = lerp(g.group.rotation.z, brz, chase);
+   g.pivot.rotation.x = lerp(g.pivot.rotation.x, brx, chase);
+g.pivot.rotation.y = lerp(g.pivot.rotation.y, bry, chase);
+g.pivot.rotation.z = lerp(g.pivot.rotation.z, brz, chase);
+
 
     const bsx = (g.baseScaleX || 1) * (g.animScale || 1);
     const bsy = (g.baseScaleY || 1) * (g.animScale || 1);
@@ -2141,36 +2193,71 @@ function updateHoverEffects() {
   _hoverStrength = maxF;
 
 // Spin360: trigger ONLY on actual mesh hover enter (raycast)
+// Spin360: per-glyph enter, allow multiple simultaneous spins.
+// Rules:
+// - entering a glyph triggers its 360 (if not already spinning)
+// - leaving a glyph resets it to 0 (immediately if idle, or after spin completes if busy)
+// - moving to another glyph does NOT block; previous can keep spinning
 if (hoverMode === "spin360") {
   const idx = _raycastGlyphIndexUnderCursor();
   const allowed = _hoverStrength >= minHoverF;
 
-  const cur = _hoveredGlyphIdx >= 0 ? glyphs[_hoveredGlyphIdx] : null;
-  const locked = !!(cur && cur._spin360Lock); // <<< if spinning, do NOT consider hover-out
-
-  if (locked) {
-    // keep it “hovered” until spin completes
-    _spin360MissFrames = 0;
-  } else if (allowed && idx >= 0) {
+  if (allowed && idx >= 0) {
     _spin360MissFrames = 0;
 
-    if (idx !== _hoveredGlyphIdx) {
-      if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
-      _hoveredGlyphIdx = idx;
-      _spin360Trigger(glyphs[idx]);
+    // If we moved off a previous glyph, mark it as left
+    if (_spin360PrevIdx !== -1 && _spin360PrevIdx !== idx && _spin360PrevGlyph) {
+      const prev = _spin360PrevGlyph;
+      if (prev._spin360Busy || prev._spin360Lock) {
+        prev._spin360PendingReset = true; // reset after it finishes
+      } else {
+        _spin360Reset(prev);
+      }
+    }
+
+    // Entering a new glyph
+    if (idx !== _spin360PrevIdx) {
+      _spin360PrevIdx = idx;
+      _spin360PrevGlyph = glyphs[idx];
+
+      // if it had a pending reset but we re-entered quickly, cancel that reset
+      _spin360PrevGlyph._spin360PendingReset = false;
+
+      _spin360Trigger(_spin360PrevGlyph);
     }
   } else {
+    // Not currently on a glyph (or not allowed)
     _spin360MissFrames++;
+
     if (_spin360MissFrames >= SPIN360_MISS_FRAMES_BEFORE_RESET) {
-      if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
-      _hoveredGlyphIdx = -1;
+      if (_spin360PrevGlyph) {
+        const prev = _spin360PrevGlyph;
+        if (prev._spin360Busy || prev._spin360Lock) {
+          prev._spin360PendingReset = true;
+        } else {
+          _spin360Reset(prev);
+        }
+      }
+      _spin360PrevIdx = -1;
+      _spin360PrevGlyph = null;
       _spin360MissFrames = 0;
     }
   }
 } else {
+  // Leaving spin360 mode: reset any last hovered glyph
   _spin360MissFrames = 0;
-  if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
-  _hoveredGlyphIdx = -1;
+
+  if (_spin360PrevGlyph) {
+    const prev = _spin360PrevGlyph;
+    if (prev._spin360Busy || prev._spin360Lock) {
+      prev._spin360PendingReset = true;
+    } else {
+      _spin360Reset(prev);
+    }
+  }
+
+  _spin360PrevIdx = -1;
+  _spin360PrevGlyph = null;
 }
 
 
@@ -2298,9 +2385,10 @@ if (hoverMode === "spin360") {
 
     const chaseRot = (g._spin360Busy || g._spin360Lock) ? Math.max(chase, 0.65) : chase;
 
-g.group.rotation.x = lerp(g.group.rotation.x, rx, chaseRot);
-g.group.rotation.y = lerp(g.group.rotation.y, ry, chaseRot);
-g.group.rotation.z = lerp(g.group.rotation.z, rz, chaseRot);
+g.pivot.rotation.x = lerp(g.pivot.rotation.x, rx, chaseRot);
+g.pivot.rotation.y = lerp(g.pivot.rotation.y, ry, chaseRot);
+g.pivot.rotation.z = lerp(g.pivot.rotation.z, rz, chaseRot);
+
 
 
     g.group.scale.x = lerp(g.group.scale.x, sx, chase);
@@ -2433,6 +2521,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

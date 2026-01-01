@@ -1914,8 +1914,13 @@ function onPointerEnter(e) {
 function onPointerLeave() {
   pointerActive = false;
   _hoverStrength = 0;
+
+  if (_hoveredGlyphIdx >= 0) {
+    _spin360Reset(glyphs[_hoveredGlyphIdx]);
+  }
   _hoveredGlyphIdx = -1;
 }
+
 
 function getCursorLocalOnTextPlane(outLocal) {
   _raycaster.setFromCamera(pointerNDC, camera);
@@ -2114,7 +2119,8 @@ function updateHoverEffects() {
   _hoverStrength = maxF;
 
   // Spin360: trigger ONLY on actual mesh hover enter (raycast)
-  if (hoverMode === "spin360") {
+ // Spin360: trigger ONLY on actual mesh hover enter (raycast)
+if (hoverMode === "spin360") {
   const idx = _raycastGlyphIndexUnderCursor();
   const allowed = _hoverStrength >= minHoverF;
 
@@ -2141,9 +2147,7 @@ function updateHoverEffects() {
     _spin360Reset(glyphs[_hoveredGlyphIdx]);
   }
   _hoveredGlyphIdx = -1;
-}else {
-    _hoveredGlyphIdx = -1;
-  }
+}
 
   for (const g of glyphs) {
     const f = g.hoverF || 0;
@@ -2400,4 +2404,5 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 

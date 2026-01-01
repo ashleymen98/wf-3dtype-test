@@ -11,10 +11,10 @@ import { LineMaterial } from "https://cdn.jsdelivr.net/npm/three@0.160.0/example
 const gsap = window.gsap;
 
 // ---------------------------
-// Version stamp (helps detect cache)
+// Version stamp
 // ---------------------------
 const CORE_VERSION =
-  "core_v11_spin360+perLetterFace+noBgChecker+checkerWorldUV (keeps bg+faceChecker+repel+sweep+heat)";
+  "core_v12_spin360Inertia + perLetterFace + bgNoChecker + faceCheckerWorldUV";
 console.log("[3DType/Core]", CORE_VERSION);
 window.__WF_3DTYPE_CORE_VERSION__ = CORE_VERSION;
 
@@ -83,10 +83,7 @@ const params = (window.params ||= {
   lineSpacing: 1.05,
   align: "center",
 
-  // (compat)
-  bg: "#111111",
-
-  // Background modes (checker REMOVED)
+  // Background (ONLY solid/gradient now)
   bgMode: "solid", // solid | gradient
   bgSolid: "#111111",
   bgGradA: "#101018",
@@ -96,7 +93,7 @@ const params = (window.params ||= {
 
   // Face Fill (solid | gradient | checker | perLetter)
   faceMode: "gradient",
-  faceUVSpace: "glyph", // glyph | world (checker forces world automatically)
+  faceUVSpace: "glyph", // glyph | world (note: checker will FORCE world for consistency)
   faceSolid: "#ff0000",
   faceGradA: "#ff0055",
   faceGradB: "#00ffcc",
@@ -106,10 +103,10 @@ const params = (window.params ||= {
   faceStopC: 1,
   faceGradDir: "horizontal",
 
-  // Per-letter face color mode
-  facePerLetterColors: [],
+  // Per-letter face colors
+  faceLetterColors: [],
 
-  // Face Checker controls
+  // Face Checker controls (now consistent across letters via WORLD UV)
   faceChkScale: 42,
   faceChkLineWidth: 3,
   faceChkRotate: 0,
@@ -140,7 +137,7 @@ const params = (window.params ||= {
   lightingMode: "accurate",
   cameraPreset: "front",
 
-  // GSAP animation
+  // GSAP animation (no cylinder)
   animPreset: "depth",
   animSpeed: 1.2,
   animStagger: 0.03,
@@ -155,13 +152,12 @@ const params = (window.params ||= {
   animAlsoDepth: true,
   animAxis: "y",
 
-  // preset tuning
   animSpinDeg: 360,
   animExplodeAmount: 220,
   animExplodeTwistDeg: 45,
 
   // Hover
-  hoverMode: "lift",
+  hoverMode: "lift", // lift | rotate | tilt | pulse | repel | spin | spin360 | explode | none
   proximityLift: true,
   proximityRadiusWorld: 140,
   proximityLiftAmount: 60,
@@ -171,24 +167,23 @@ const params = (window.params ||= {
   hoverRotateDeg: 20,
   hoverTiltDeg: 18,
   hoverPulse: 0.12,
-  hoverRotateAxis: "z", // rotate mode axis: x|y|z|random
 
-  // Hover spin (continuous feel)
+  // Hover spin (existing “spin” mode)
   hoverSpinDeg: 120,
-  hoverSpinAxis: "z", // x|y|z
-  hoverSpinRandomAxis: false,
-  hoverSpinRandomDir: false,
+  hoverSpinAxis: "z", // x|y|z|random
+  hoverSpinRandomDir: true,
+  hoverSpinRandomAmount: false,
+  hoverSpinAmountJitter: 0.35, // 0..1
 
-  // Hover explode
+  // New Hover: spin360 inertia
+  hoverSpin360Axis: "random", // x|y|z|random
+  hoverSpin360RandomDir: true,
+  hoverSpin360Boost: 0.018, // impulse per (cursorSpeed * f)
+  hoverSpin360MaxVel: 10.0, // rad/sec cap
+  hoverSpin360Damping: 7.5, // higher = stops sooner
+
   hoverExplodeAmount: 120,
   hoverExplodeTwistDeg: 35,
-
-  // NEW hover mode: spin360 (one-shot)
-  hoverSpin360Axis: "z",        // x|y|z|random
-  hoverSpin360Turns: 1,         // 1 = 360°
-  hoverSpin360Inertia: 0.85,    // 0..0.98
-  hoverSpin360MinTrigger: 0.12, // threshold of hoverF to trigger
-  hoverSpin360Boost: 3.0,       // cursor speed -> impulse multiplier
 
   // Repel
   repelAmount: 80,
@@ -254,62 +249,86 @@ const params = (window.params ||= {
 function ensureParam(key, val) {
   if (!(key in params)) params[key] = val;
 }
-ensureParam("animSpinDeg", 360);
-ensureParam("animExplodeAmount", 220);
-ensureParam("animExplodeTwistDeg", 45);
-
-ensureParam("hoverSpinDeg", 120);
 ensureParam("hoverSpinAxis", "z");
-ensureParam("hoverSpinRandomAxis", false);
-ensureParam("hoverSpinRandomDir", false);
+ensureParam("hoverSpinRandomDir", true);
+ensureParam("hoverSpinRandomAmount", false);
+ensureParam("hoverSpinAmountJitter", 0.35);
 
-ensureParam("hoverExplodeAmount", 120);
-ensureParam("hoverExplodeTwistDeg", 35);
+ensureParam("hoverSpin360Axis", "random");
+ensureParam("hoverSpin360RandomDir", true);
+ensureParam("hoverSpin360Boost", 0.018);
+ensureParam("hoverSpin360MaxVel", 10.0);
+ensureParam("hoverSpin360Damping", 7.5);
 
-ensureParam("hoverSpin360Axis", "z");
-ensureParam("hoverSpin360Turns", 1);
-ensureParam("hoverSpin360Inertia", 0.85);
-ensureParam("hoverSpin360MinTrigger", 0.12);
-ensureParam("hoverSpin360Boost", 3.0);
-
-ensureParam("facePerLetterColors", []);
+ensureParam("faceLetterColors", []);
 
 window.params = params;
 
 // ---------------------------
 // Utils
 // ---------------------------
-const ASPECTS = { "1:1":[1,1], "4:5":[4,5], "9:16":[9,16], "9:18":[9,18], "16:9":[16,9] };
-const lerp = (a,b,t)=>a+(b-a)*t;
-const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-const clamp01 = v => clamp(Number(v),0,1);
-const smoothstep01 = x => { x = clamp(x,0,1); return x*x*(3-2*x); };
-const falloff = (u,mode)=>{
-  u = clamp(u,0,1);
-  if(mode==="quadratic") return u*u;
-  if(mode==="smooth") return smoothstep01(u);
+const ASPECTS = {
+  "1:1": [1, 1],
+  "4:5": [4, 5],
+  "9:16": [9, 16],
+  "9:18": [9, 18],
+  "16:9": [16, 9],
+};
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const clamp01 = (v) => clamp(Number(v), 0, 1);
+const smoothstep01 = (x) => {
+  x = clamp(x, 0, 1);
+  return x * x * (3 - 2 * x);
+};
+const falloff = (u, mode) => {
+  u = clamp(u, 0, 1);
+  if (mode === "quadratic") return u * u;
+  if (mode === "smooth") return smoothstep01(u);
   return u;
 };
-const srgbColor = hex => new THREE.Color(hex).convertSRGBToLinear();
-const disposeIf = o => { try{o?.dispose?.()}catch(e){} };
-const fixStops = (a,b,c)=>{
-  a=clamp01(a); b=clamp01(b); c=clamp01(c);
-  if(b<a) b=a; if(c<b) c=b;
-  const eps=0.001;
-  if(b-a<eps) b=Math.min(1,a+eps);
-  if(c-b<eps) c=Math.min(1,b+eps);
-  return {a,b,c};
+const srgbColor = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+const disposeIf = (o) => {
+  try {
+    o?.dispose?.();
+  } catch (e) {}
 };
-function hash01(n){
+const fixStops = (a, b, c) => {
+  a = clamp01(a);
+  b = clamp01(b);
+  c = clamp01(c);
+  if (b < a) b = a;
+  if (c < b) c = b;
+  const eps = 0.001;
+  if (b - a < eps) b = Math.min(1, a + eps);
+  if (c - b < eps) c = Math.min(1, b + eps);
+  return { a, b, c };
+};
+function hash01(n) {
   const s = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
   return s - Math.floor(s);
+}
+function stablePickAxis(idx, baseAxis, allowRandom) {
+  let ax = String(baseAxis || "z").toLowerCase();
+  if (ax !== "random" && !allowRandom) return ax;
+  if (ax !== "random" && allowRandom === false) return ax;
+  // stable random
+  const u = hash01(idx + 77);
+  return u < 0.333 ? "x" : u < 0.666 ? "y" : "z";
+}
+function stablePickSign(idx, enabled) {
+  if (!enabled) return 1;
+  return hash01(idx + 901) < 0.5 ? -1 : 1;
+}
+function stableJitter(idx) {
+  return hash01(idx + 1337) * 2 - 1; // -1..1
 }
 
 // ---------------------------
 // Three core
 // ---------------------------
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.sortObjects = true;
 wrap.appendChild(renderer.domElement);
@@ -317,31 +336,42 @@ wrap.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 8000);
-camera.position.set(0,140,520);
+camera.position.set(0, 140, 520);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.screenSpacePanning = true;
 
-const lightsGroup = new THREE.Group(); scene.add(lightsGroup);
-const textGroup   = new THREE.Group(); scene.add(textGroup);
+const lightsGroup = new THREE.Group();
+scene.add(lightsGroup);
+const textGroup = new THREE.Group();
+scene.add(textGroup);
 
 const fontLoader = new FontLoader();
 let font = null;
 
-let raf = 0, tl = null;
+let raf = 0,
+  tl = null;
 const frame = { maxDim: 1 };
-let glyphs = [], wordGroups = [], lineGroups = [];
+let glyphs = [],
+  wordGroups = [],
+  lineGroups = [];
 
-let faceTex = null, sideTex = null, faceMat = null, sideMat = null;
+let faceTex = null,
+  sideTex = null,
+  faceMat = null,
+  sideMat = null;
 let _bgTex = null;
 
 let _fxTime = 0;
+let _fxPrevTime = 0;
+let _fxDt = 1 / 60;
+
 const _fxMats = new Set();
 
 // heat hover
-const _hoverWorld = new THREE.Vector3(0,0,0);
+const _hoverWorld = new THREE.Vector3(0, 0, 0);
 let _hoverStrength = 0;
 
 // ---------------------------
@@ -349,14 +379,14 @@ let _hoverStrength = 0;
 // ---------------------------
 const _raycaster = new THREE.Raycaster();
 const _hit = new THREE.Vector3();
-const _stablePlane = new THREE.Plane(new THREE.Vector3(0,0,1), 0);
-const _stableNormalW = new THREE.Vector3(0,0,1);
-const _stablePointW  = new THREE.Vector3(0,0,0);
+const _stablePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+const _stableNormalW = new THREE.Vector3(0, 0, 1);
+const _stablePointW = new THREE.Vector3(0, 0, 0);
 
-function _refreshStablePlane(){
+function _refreshStablePlane() {
   textGroup.updateMatrixWorld(true);
   _stableNormalW
-    .set(0,0,1)
+    .set(0, 0, 1)
     .applyQuaternion(textGroup.getWorldQuaternion(new THREE.Quaternion()))
     .normalize();
   textGroup.getWorldPosition(_stablePointW);
@@ -364,57 +394,59 @@ function _refreshStablePlane(){
 }
 
 // ---------------------------
-// Background texture (checker REMOVED)
+// Background texture (NO CHECKER MODE)
 // ---------------------------
-function makeBackgroundTexture(){
+function makeBackgroundTexture() {
   const size = 1024;
   const cv = document.createElement("canvas");
-  cv.width = size; cv.height = size;
+  cv.width = size;
+  cv.height = size;
   const ctx = cv.getContext("2d");
 
   const mode = (params.bgMode || "solid").toLowerCase();
 
-  if(mode === "solid"){
-    ctx.fillStyle = params.bgSolid || params.bg || "#111";
-    ctx.fillRect(0,0,size,size);
-  }
-
-  if(mode === "gradient"){
+  if (mode === "solid") {
+    ctx.fillStyle = params.bgSolid || "#111";
+    ctx.fillRect(0, 0, size, size);
+  } else {
+    // gradient
     const a = params.bgGradA || "#111";
     const b = params.bgGradB || "#222";
-    const ang = (Number(params.bgGradAngle||0) * Math.PI)/180;
+    const ang = (Number(params.bgGradAngle || 0) * Math.PI) / 180;
 
-    const cx=size/2, cy=size/2;
-    const dx=Math.cos(ang), dy=Math.sin(ang);
-    const len=Math.sqrt(dx*dx+dy*dy) || 1;
+    const cx = size / 2,
+      cy = size / 2;
+    const dx = Math.cos(ang),
+      dy = Math.sin(ang);
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    const x0 = cx - (dx/len) * size*0.6;
-    const y0 = cy - (dy/len) * size*0.6;
-    const x1 = cx + (dx/len) * size*0.6;
-    const y1 = cy + (dy/len) * size*0.6;
+    const x0 = cx - (dx / len) * size * 0.6;
+    const y0 = cy - (dy / len) * size * 0.6;
+    const x1 = cx + (dx / len) * size * 0.6;
+    const y1 = cy + (dy / len) * size * 0.6;
 
-    const g = ctx.createLinearGradient(x0,y0,x1,y1);
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
     const soft = clamp01(Number(params.bgGradSoft ?? 0.65));
     g.addColorStop(0.0, a);
     g.addColorStop(soft, a);
-    g.addColorStop(1.0-soft, b);
+    g.addColorStop(1.0 - soft, b);
     g.addColorStop(1.0, b);
     ctx.fillStyle = g;
-    ctx.fillRect(0,0,size,size);
+    ctx.fillRect(0, 0, size, size);
   }
 
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1,1);
+  tex.repeat.set(1, 1);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
   return tex;
 }
 
-function rebuildBackground(){
+function rebuildBackground() {
   disposeIf(_bgTex);
   _bgTex = makeBackgroundTexture();
   scene.background = _bgTex;
@@ -424,10 +456,11 @@ window.rebuildBackground = rebuildBackground;
 // ---------------------------
 // Face checker texture
 // ---------------------------
-function makeFaceCheckerTexture(){
+function makeFaceCheckerTexture() {
   const size = 1024;
   const cv = document.createElement("canvas");
-  cv.width=size; cv.height=size;
+  cv.width = size;
+  cv.height = size;
   const ctx = cv.getContext("2d");
 
   const scale = Math.max(4, Number(params.faceChkScale ?? 42));
@@ -438,35 +471,35 @@ function makeFaceCheckerTexture(){
   const lineCol = params.faceChkLineColor || "#ffffff";
 
   ctx.fillStyle = colA;
-  ctx.fillRect(0,0,size,size);
+  ctx.fillRect(0, 0, size, size);
 
-  const rot = (rotDeg * Math.PI)/180;
+  const rot = (rotDeg * Math.PI) / 180;
   ctx.save();
-  ctx.translate(size/2,size/2);
+  ctx.translate(size / 2, size / 2);
   ctx.rotate(rot);
-  ctx.translate(-size/2,-size/2);
+  ctx.translate(-size / 2, -size / 2);
 
   ctx.fillStyle = colB;
-  for(let y=-scale; y<size+scale; y+=scale){
-    for(let x=-scale; x<size+scale; x+=scale){
-      const ix = Math.floor(x/scale);
-      const iy = Math.floor(y/scale);
-      if((ix+iy) % 2 === 0) continue;
-      ctx.fillRect(x,y,scale,scale);
+  for (let y = -scale; y < size + scale; y += scale) {
+    for (let x = -scale; x < size + scale; x += scale) {
+      const ix = Math.floor(x / scale);
+      const iy = Math.floor(y / scale);
+      if ((ix + iy) % 2 === 0) continue;
+      ctx.fillRect(x, y, scale, scale);
     }
   }
 
-  if(lineW > 0){
+  if (lineW > 0) {
     ctx.lineWidth = lineW;
     ctx.strokeStyle = lineCol;
     ctx.beginPath();
-    for(let x=-scale; x<=size+scale; x+=scale){
+    for (let x = -scale; x <= size + scale; x += scale) {
       ctx.moveTo(x, -scale);
-      ctx.lineTo(x, size+scale);
+      ctx.lineTo(x, size + scale);
     }
-    for(let y=-scale; y<=size+scale; y+=scale){
+    for (let y = -scale; y <= size + scale; y += scale) {
       ctx.moveTo(-scale, y);
-      ctx.lineTo(size+scale, y);
+      ctx.lineTo(size + scale, y);
     }
     ctx.stroke();
   }
@@ -477,7 +510,7 @@ function makeFaceCheckerTexture(){
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1,1);
+  tex.repeat.set(1, 1);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
@@ -485,54 +518,57 @@ function makeFaceCheckerTexture(){
 }
 
 // ---------------------------
-// FX shader hook (unchanged)
+// FX shader hook (unchanged from your current core)
 // ---------------------------
-const _hash21=`float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}`;
-const _noise=`float noise2(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));vec2 u=f*f*(3.-2.*f);return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y;}`;
+const _hash21 = `float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}`;
+const _noise = `float noise2(vec2 p){vec2 i=floor(p),f=fract(p);float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1,1));vec2 u=f*f*(3.-2.*f);return mix(a,b,u.x)+(c-a)*u.y*(1.-u.x)+(d-b)*u.x*u.y;}`;
 
-function _applyFX(mat,isFace){
-  if(!mat) return;
+function _applyFX(mat, isFace) {
+  if (!mat) return;
   mat.userData ||= {};
-  if(mat.userData._fxApplied) return;
+  if (mat.userData._fxApplied) return;
   mat.userData._fxApplied = 1;
 
-  mat.customProgramCacheKey = ()=>`fx_v9_${isFace?1:0}`;
+  mat.customProgramCacheKey = () => `fx_v8_${isFace ? 1 : 0}`;
 
-  mat.onBeforeCompile = (s)=>{
-    s.uniforms.uTime={value:0};
-    s.uniforms.uIsFace={value:isFace?1:0};
+  mat.onBeforeCompile = (s) => {
+    s.uniforms.uTime = { value: 0 };
+    s.uniforms.uIsFace = { value: isFace ? 1 : 0 };
 
-    s.uniforms.uHalftoneTarget={value:0};
-    s.uniforms.uGrainTarget={value:0};
+    s.uniforms.uHalftoneTarget = { value: 0 };
+    s.uniforms.uGrainTarget = { value: 0 };
 
-    s.uniforms.uFaceBright={value:1};
-    s.uniforms.uSideBright={value:1};
+    s.uniforms.uFaceBright = { value: 1 };
+    s.uniforms.uSideBright = { value: 1 };
 
-    s.uniforms.uHalftoneOn={value:0};
-    s.uniforms.uHalftoneScale={value:90};
-    s.uniforms.uHalftoneAngle={value:25};
-    s.uniforms.uHalftoneStrength={value:.6};
-    s.uniforms.uHalftoneSoftness={value:.15};
+    s.uniforms.uHalftoneOn = { value: 0 };
+    s.uniforms.uHalftoneScale = { value: 90 };
+    s.uniforms.uHalftoneAngle = { value: 25 };
+    s.uniforms.uHalftoneStrength = { value: 0.6 };
+    s.uniforms.uHalftoneSoftness = { value: 0.15 };
 
-    s.uniforms.uGrainOn={value:0};
-    s.uniforms.uGrainAmount={value:.12};
-    s.uniforms.uGrainScale={value:220};
-    s.uniforms.uGrainSpeed={value:.35};
+    s.uniforms.uGrainOn = { value: 0 };
+    s.uniforms.uGrainAmount = { value: 0.12 };
+    s.uniforms.uGrainScale = { value: 220 };
+    s.uniforms.uGrainSpeed = { value: 0.35 };
 
     // Heat bloom
-    s.uniforms.uHeatOn={value:0};
-    s.uniforms.uHeatPos={value:new THREE.Vector3(0,0,0)};
-    s.uniforms.uHeatRadius={value:160};
-    s.uniforms.uHeatSoft={value:.35};
-    s.uniforms.uHeatStrength={value:0};
-    s.uniforms.uHeatBright={value:.55};
-    s.uniforms.uHeatGrainBoost={value:1.25};
-    s.uniforms.uHeatHalfBoost={value:1.0};
+    s.uniforms.uHeatOn = { value: 0 };
+    s.uniforms.uHeatPos = { value: new THREE.Vector3(0, 0, 0) };
+    s.uniforms.uHeatRadius = { value: 160 };
+    s.uniforms.uHeatSoft = { value: 0.35 };
+    s.uniforms.uHeatStrength = { value: 0 };
+    s.uniforms.uHeatBright = { value: 0.55 };
+    s.uniforms.uHeatGrainBoost = { value: 1.25 };
+    s.uniforms.uHeatHalfBoost = { value: 1.0 };
 
-    if(!s.vertexShader.includes("varying vec3 vWorldPos;")){
+    if (!s.vertexShader.includes("varying vec3 vWorldPos;")) {
       s.vertexShader = s.vertexShader
         .replace("#include <common>", `#include <common>\nvarying vec3 vWorldPos;`)
-        .replace("#include <begin_vertex>", `#include <begin_vertex>\nvec4 wp=modelMatrix*vec4(position,1.0);\nvWorldPos=wp.xyz;`);
+        .replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>\nvec4 wp=modelMatrix*vec4(position,1.0);\nvWorldPos=wp.xyz;`
+        );
     }
 
     const commonInject = `
@@ -589,8 +625,11 @@ float heatFalloff(float d,float r,float soft){
   return smoothstep(0.0,1.0,pow(x,k));
 }
 `;
-    if(!s.fragmentShader.includes("varying vec3 vWorldPos;")){
-      s.fragmentShader = s.fragmentShader.replace("#include <common>", `#include <common>\n${commonInject}`);
+    if (!s.fragmentShader.includes("varying vec3 vWorldPos;")) {
+      s.fragmentShader = s.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>\n${commonInject}`
+      );
     }
 
     const fxBlock = `
@@ -638,7 +677,7 @@ float heatFalloff(float d,float r,float soft){
   gl_FragColor.rgb = col;
 }
 `;
-    if(s.fragmentShader.includes("#include <dithering_fragment>")){
+    if (s.fragmentShader.includes("#include <dithering_fragment>")) {
       s.fragmentShader = s.fragmentShader.replace(
         "#include <dithering_fragment>",
         `${fxBlock}\n#include <dithering_fragment>`
@@ -652,18 +691,18 @@ float heatFalloff(float d,float r,float soft){
   mat.needsUpdate = true;
 }
 
-function _syncFXUniforms(){
-  const halfT = (params.halftoneTarget==="face")?1:(params.halftoneTarget==="side")?2:0;
-  const grainT = (params.grainTarget==="face")?1:(params.grainTarget==="side")?2:0;
+function _syncFXUniforms() {
+  const halfT = params.halftoneTarget === "face" ? 1 : params.halftoneTarget === "side" ? 2 : 0;
+  const grainT = params.grainTarget === "face" ? 1 : params.grainTarget === "side" ? 2 : 0;
 
   const faceB = Number(params.faceBright ?? 1);
   const sideB = Number(params.sideBright ?? 1);
 
   const heatOn = params.heatBloomOn ? 1 : 0;
 
-  for(const m of _fxMats){
+  for (const m of _fxMats) {
     const u = m.userData?._fxUniforms;
-    if(!u) continue;
+    if (!u) continue;
 
     u.uTime.value = _fxTime;
     u.uHalftoneTarget.value = halfT;
@@ -673,24 +712,24 @@ function _syncFXUniforms(){
     u.uSideBright.value = sideB;
 
     u.uHalftoneOn.value = params.halftoneOn ? 1 : 0;
-    u.uHalftoneScale.value = Number(params.halftoneScale||90);
-    u.uHalftoneAngle.value = Number(params.halftoneAngle||25);
-    u.uHalftoneStrength.value = Number(params.halftoneStrength||0);
-    u.uHalftoneSoftness.value = Number(params.halftoneSoftness||.15);
+    u.uHalftoneScale.value = Number(params.halftoneScale || 90);
+    u.uHalftoneAngle.value = Number(params.halftoneAngle || 25);
+    u.uHalftoneStrength.value = Number(params.halftoneStrength || 0);
+    u.uHalftoneSoftness.value = Number(params.halftoneSoftness || 0.15);
 
     u.uGrainOn.value = params.grainOn ? 1 : 0;
-    u.uGrainAmount.value = Number(params.grainAmount||0);
-    u.uGrainScale.value = Number(params.grainScale||220);
-    u.uGrainSpeed.value = Number(params.grainSpeed||.35);
+    u.uGrainAmount.value = Number(params.grainAmount || 0);
+    u.uGrainScale.value = Number(params.grainScale || 220);
+    u.uGrainSpeed.value = Number(params.grainSpeed || 0.35);
 
     u.uHeatOn.value = heatOn;
     u.uHeatPos.value.copy(_hoverWorld);
-    u.uHeatRadius.value = Number(params.heatRadiusWorld||160);
+    u.uHeatRadius.value = Number(params.heatRadiusWorld || 160);
     u.uHeatSoft.value = clamp01(Number(params.heatSoftness ?? 0.35));
     u.uHeatStrength.value = clamp01(_hoverStrength);
-    u.uHeatBright.value = Number(params.heatBrightBoost||0);
-    u.uHeatGrainBoost.value = Number(params.heatGrainBoost||0);
-    u.uHeatHalfBoost.value = Number(params.heatHalfBoost||0);
+    u.uHeatBright.value = Number(params.heatBrightBoost || 0);
+    u.uHeatGrainBoost.value = Number(params.heatGrainBoost || 0);
+    u.uHeatHalfBoost.value = Number(params.heatHalfBoost || 0);
   }
 }
 window._syncFXUniforms = _syncFXUniforms;
@@ -698,12 +737,12 @@ window._syncFXUniforms = _syncFXUniforms;
 // ---------------------------
 // Gradient animation
 // ---------------------------
-function _animateTex(tex, speed, angleDeg, phase=0){
-  if(!tex) return;
-  const sp = Number(speed||0);
-  if(sp === 0) return;
+function _animateTex(tex, speed, angleDeg, phase = 0) {
+  if (!tex) return;
+  const sp = Number(speed || 0);
+  if (sp === 0) return;
 
-  const ang = THREE.MathUtils.degToRad(Number(angleDeg||0));
+  const ang = THREE.MathUtils.degToRad(Number(angleDeg || 0));
   const dx = Math.cos(ang) * sp;
   const dy = Math.sin(ang) * sp;
 
@@ -711,138 +750,177 @@ function _animateTex(tex, speed, angleDeg, phase=0){
   const oy = (dy * _fxTime + phase) % 1;
   tex.offset.set(ox, oy);
 }
-function _applyGradientAnimation(){
-  if(params.faceGradAnimOn && faceTex && params.faceMode==="gradient"){
+function _applyGradientAnimation() {
+  if (params.faceGradAnimOn && faceTex && params.faceMode === "gradient") {
     _animateTex(faceTex, params.faceGradSpeed, params.faceGradAngle, 0.0);
   }
-  if(params.sideGradAnimOn && sideTex && params.sideMode==="gradient"){
+  if (params.sideGradAnimOn && sideTex && params.sideMode === "gradient") {
     _animateTex(sideTex, params.sideGradSpeed, params.sideGradAngle, 0.17);
   }
 }
 
-function makeGradientTexture3(a,sa,b,sb,c,sc,dir){
-  const size=512;
-  const cv=document.createElement("canvas");
-  cv.width=size; cv.height=size;
-  const ctx=cv.getContext("2d");
+function makeGradientTexture3(a, sa, b, sb, c, sc, dir) {
+  const size = 512;
+  const cv = document.createElement("canvas");
+  cv.width = size;
+  cv.height = size;
+  const ctx = cv.getContext("2d");
 
-  let x0=0,y0=0,x1=0,y1=size;
-  if(dir==="horizontal"){ x1=size; y1=0; }
-  if(dir==="diagonal"){ x0=0; y0=size; x1=size; y1=0; }
+  let x0 = 0,
+    y0 = 0,
+    x1 = 0,
+    y1 = size;
+  if (dir === "horizontal") {
+    x1 = size;
+    y1 = 0;
+  }
+  if (dir === "diagonal") {
+    x0 = 0;
+    y0 = size;
+    x1 = size;
+    y1 = 0;
+  }
 
-  const s=fixStops(sa,sb,sc);
-  const g=ctx.createLinearGradient(x0,y0,x1,y1);
-  g.addColorStop(s.a,a);
-  g.addColorStop(s.b,b);
-  g.addColorStop(s.c,c);
+  const s = fixStops(sa, sb, sc);
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(s.a, a);
+  g.addColorStop(s.b, b);
+  g.addColorStop(s.c, c);
 
-  ctx.fillStyle=g;
-  ctx.fillRect(0,0,size,size);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
 
-  const tex=new THREE.CanvasTexture(cv);
-  tex.colorSpace=THREE.SRGBColorSpace;
-  tex.wrapS=THREE.RepeatWrapping;
-  tex.wrapT=THREE.RepeatWrapping;
-  tex.repeat.set(1,1);
-  tex.offset.set(0,0);
-  tex.minFilter=THREE.LinearFilter;
-  tex.magFilter=THREE.LinearFilter;
-  tex.needsUpdate=true;
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 1);
+  tex.offset.set(0, 0);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
   return tex;
 }
 
 // ---------------------------
 // Sizing
 // ---------------------------
-function applyCanvasSizing(){
-  if(params.aspect==="free"){
-    wrap.style.width="100vw";
-    wrap.style.height="100vh";
-    wrap.style.position="absolute";
-    wrap.style.left="0";
-    wrap.style.top="0";
-    wrap.style.transform="none";
+function applyCanvasSizing() {
+  if (params.aspect === "free") {
+    wrap.style.width = "100vw";
+    wrap.style.height = "100vh";
+    wrap.style.position = "absolute";
+    wrap.style.left = "0";
+    wrap.style.top = "0";
+    wrap.style.transform = "none";
     return;
   }
-  const m=Math.max(0,Number(params.margin||0));
-  const availW=Math.max(320,innerWidth-m*2);
-  const availH=Math.max(320,innerHeight-m*2);
-  const [rw,rh]=ASPECTS[params.aspect]||[1,1];
+  const m = Math.max(0, Number(params.margin || 0));
+  const availW = Math.max(320, innerWidth - m * 2);
+  const availH = Math.max(320, innerHeight - m * 2);
+  const [rw, rh] = ASPECTS[params.aspect] || [1, 1];
 
-  let w=availW;
-  let h=Math.round(w*(rh/rw));
-  if(h>availH){ h=availH; w=Math.round(h*(rw/rh)); }
+  let w = availW;
+  let h = Math.round(w * (rh / rw));
+  if (h > availH) {
+    h = availH;
+    w = Math.round(h * (rw / rh));
+  }
 
-  wrap.style.width=w+"px";
-  wrap.style.height=h+"px";
-  wrap.style.position="absolute";
-  wrap.style.left="50%";
-  wrap.style.top="50%";
-  wrap.style.transform="translate(-50%,-50%)";
+  wrap.style.width = w + "px";
+  wrap.style.height = h + "px";
+  wrap.style.position = "absolute";
+  wrap.style.left = "50%";
+  wrap.style.top = "50%";
+  wrap.style.transform = "translate(-50%,-50%)";
 }
 
-function resize(){
+function resize() {
   applyCanvasSizing();
-  const w=wrap.clientWidth, h=wrap.clientHeight;
-  renderer.setSize(w,h,false);
-  camera.aspect=w/h; camera.updateProjectionMatrix();
-  textGroup.traverse(o=>{ if(o?.material?.isLineMaterial) o.material.resolution.set(w,h); });
+  const w = wrap.clientWidth,
+    h = wrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  textGroup.traverse((o) => {
+    if (o?.material?.isLineMaterial) o.material.resolution.set(w, h);
+  });
 }
 window.resize = resize;
 
 // ---------------------------
 // Materials
 // ---------------------------
-function rebuildFillMaterials(){
-  for(const m of _fxMats){ try{ m.userData._fxUniforms=null; }catch(e){} }
+function rebuildFillMaterials() {
+  for (const m of _fxMats) {
+    try {
+      m.userData._fxUniforms = null;
+    } catch (e) {}
+  }
   _fxMats.clear();
 
-  disposeIf(faceTex); disposeIf(sideTex);
-  disposeIf(faceMat); disposeIf(sideMat);
+  disposeIf(faceTex);
+  disposeIf(sideTex);
+  disposeIf(faceMat);
+  disposeIf(sideMat);
 
-  // FACE (perLetter uses solid-like base, but each glyph clones its own face material)
-  if(params.faceMode==="gradient"){
+  // FACE
+  if (params.faceMode === "gradient") {
     faceTex = makeGradientTexture3(
-      params.faceGradA,params.faceStopA,
-      params.faceGradB,params.faceStopB,
-      params.faceGradC,params.faceStopC,
+      params.faceGradA,
+      params.faceStopA,
+      params.faceGradB,
+      params.faceStopB,
+      params.faceGradC,
+      params.faceStopC,
       params.faceGradDir
     );
-  }else if(params.faceMode==="checker"){
+  } else if (params.faceMode === "checker") {
     faceTex = makeFaceCheckerTexture();
-  }else{
+  } else {
     faceTex = null;
   }
 
   // SIDE
-  sideTex = (params.sideMode==="gradient")
-    ? makeGradientTexture3(
-        params.sideGradA,params.sideStopA,
-        params.sideGradB,params.sideStopB,
-        params.sideGradC,params.sideStopC,
-        params.sideGradDir
-      )
-    : null;
+  sideTex =
+    params.sideMode === "gradient"
+      ? makeGradientTexture3(
+          params.sideGradA,
+          params.sideStopA,
+          params.sideGradB,
+          params.sideStopB,
+          params.sideGradC,
+          params.sideStopC,
+          params.sideGradDir
+        )
+      : null;
 
-  const faceCommon = { map: faceTex||null, color: faceTex ? new THREE.Color(0xffffff) : srgbColor(params.faceSolid) };
-  const sideCommon = { map: sideTex||null, color: sideTex ? new THREE.Color(0xffffff) : srgbColor(params.sideSolid) };
+  const faceCommon = {
+    map: faceTex || null,
+    color: faceTex ? new THREE.Color(0xffffff) : srgbColor(params.faceSolid),
+  };
+  const sideCommon = {
+    map: sideTex || null,
+    color: sideTex ? new THREE.Color(0xffffff) : srgbColor(params.sideSolid),
+  };
 
-  if(params.lightingMode==="accurate"){
+  // Base faceMat used for non-perLetter
+  if (params.lightingMode === "accurate") {
     faceMat = new THREE.MeshBasicMaterial(faceCommon);
-    sideMat = new THREE.MeshStandardMaterial({ ...sideCommon, metalness:0, roughness:.9 });
-  }else{
-    faceMat = new THREE.MeshStandardMaterial({ ...faceCommon, metalness:.05, roughness:.45 });
-    sideMat = new THREE.MeshStandardMaterial({ ...sideCommon, metalness:.05, roughness:.55 });
+    sideMat = new THREE.MeshStandardMaterial({ ...sideCommon, metalness: 0, roughness: 0.9 });
+  } else {
+    faceMat = new THREE.MeshStandardMaterial({ ...faceCommon, metalness: 0.05, roughness: 0.45 });
+    sideMat = new THREE.MeshStandardMaterial({ ...sideCommon, metalness: 0.05, roughness: 0.55 });
   }
 
-  if(faceMat.map) faceMat.map.flipY=false;
-  if(sideMat.map) sideMat.map.flipY=false;
+  if (faceMat.map) faceMat.map.flipY = false;
+  if (sideMat.map) sideMat.map.flipY = false;
 
   faceMat.userData = {};
   sideMat.userData = {};
 
-  _applyFX(faceMat,true);
-  _applyFX(sideMat,false);
+  _applyFX(faceMat, true);
+  _applyFX(sideMat, false);
 
   faceMat.needsUpdate = true;
   sideMat.needsUpdate = true;
@@ -852,18 +930,22 @@ window.rebuildFillMaterials = rebuildFillMaterials;
 // ---------------------------
 // Lighting
 // ---------------------------
-function applyLightingMode(){
-  while(lightsGroup.children.length) lightsGroup.remove(lightsGroup.children[0]);
+function applyLightingMode() {
+  while (lightsGroup.children.length) lightsGroup.remove(lightsGroup.children[0]);
 
-  if(params.lightingMode==="accurate"){
-    lightsGroup.add(new THREE.AmbientLight(0xffffff,1.25));
-    const key=new THREE.DirectionalLight(0xffffff,.25);
-    key.position.set(0,1,1);
+  if (params.lightingMode === "accurate") {
+    lightsGroup.add(new THREE.AmbientLight(0xffffff, 1.25));
+    const key = new THREE.DirectionalLight(0xffffff, 0.25);
+    key.position.set(0, 1, 1);
     lightsGroup.add(key);
-  }else{
-    lightsGroup.add(new THREE.AmbientLight(0xffffff,.65));
-    const key=new THREE.DirectionalLight(0xffffff,.95); key.position.set(300,450,250); lightsGroup.add(key);
-    const fill=new THREE.DirectionalLight(0xffffff,.25); fill.position.set(-300,120,-250); lightsGroup.add(fill);
+  } else {
+    lightsGroup.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const key = new THREE.DirectionalLight(0xffffff, 0.95);
+    key.position.set(300, 450, 250);
+    lightsGroup.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.25);
+    fill.position.set(-300, 120, -250);
+    lightsGroup.add(fill);
   }
 
   rebuildFillMaterials();
@@ -874,26 +956,27 @@ window.applyLightingMode = applyLightingMode;
 // ---------------------------
 // Stroke
 // ---------------------------
-function createStrokeMaterial(){
-  const m=new LineMaterial({ color:0x000000, linewidth:Number(params.strokeWidth||2) });
-  m.transparent=true;
-  m.depthWrite=false;
-  m.depthTest=!params.overlayMode;
-  m.polygonOffset=true;
-  m.polygonOffsetFactor=-1;
-  m.polygonOffsetUnits=-1;
+function createStrokeMaterial() {
+  const m = new LineMaterial({ color: 0x000000, linewidth: Number(params.strokeWidth || 2) });
+  m.transparent = true;
+  m.depthWrite = false;
+  m.depthTest = !params.overlayMode;
+  m.polygonOffset = true;
+  m.polygonOffsetFactor = -1;
+  m.polygonOffsetUnits = -1;
   m.color.set(srgbColor(params.stroke));
   m.resolution.set(wrap.clientWidth, wrap.clientHeight);
   return m;
 }
 
-function filterEdgesToFrontBackFaces(posArray, depth, eps=1e-4){
-  const out=[];
-  for(let i=0;i<posArray.length;i+=6){
-    const z1=posArray[i+2], z2=posArray[i+5];
-    const onBack=(Math.abs(z1-0)<eps)&&(Math.abs(z2-0)<eps);
-    const onFront=(Math.abs(z1-depth)<eps)&&(Math.abs(z2-depth)<eps);
-    if(onBack||onFront) out.push(...posArray.slice(i,i+6));
+function filterEdgesToFrontBackFaces(posArray, depth, eps = 1e-4) {
+  const out = [];
+  for (let i = 0; i < posArray.length; i += 6) {
+    const z1 = posArray[i + 2],
+      z2 = posArray[i + 5];
+    const onBack = Math.abs(z1 - 0) < eps && Math.abs(z2 - 0) < eps;
+    const onFront = Math.abs(z1 - depth) < eps && Math.abs(z2 - depth) < eps;
+    if (onBack || onFront) out.push(...posArray.slice(i, i + 6));
   }
   return out;
 }
@@ -901,176 +984,192 @@ function filterEdgesToFrontBackFaces(posArray, depth, eps=1e-4){
 // ---------------------------
 // Clear
 // ---------------------------
-function clearText(){
-  if(tl){ tl.kill(); tl=null; }
+function clearText() {
+  if (tl) {
+    tl.kill();
+    tl = null;
+  }
 
-  textGroup.traverse(o=>{
-    if(!o) return;
+  textGroup.traverse((o) => {
+    if (!o) return;
 
-    if(o.isMesh){
+    if (o.isMesh) {
       o.geometry?.dispose?.();
-      if(Array.isArray(o.material)){
-        const fm=o.material[0];
-        const sm=o.material[1];
-        if(fm && fm!==faceMat) fm.dispose?.();
-        if(sm && sm!==sideMat) sm.dispose?.();
-      }else{
-        if(o.material && o.material!==faceMat && o.material!==sideMat) o.material?.dispose?.();
+      if (Array.isArray(o.material)) {
+        const face = o.material[0];
+        const side = o.material[1];
+        if (face && face !== faceMat) face.dispose?.();
+        if (side && side !== sideMat) side.dispose?.();
+      } else if (o.material && o.material !== faceMat && o.material !== sideMat) {
+        o.material?.dispose?.();
       }
     }
-    if(o.type==="LineSegments2" || o.isLineSegments2){
+    if (o.type === "LineSegments2" || o.isLineSegments2) {
       o.geometry?.dispose?.();
       o.material?.dispose?.();
     }
   });
 
   textGroup.clear();
-  glyphs=[]; wordGroups=[]; lineGroups=[];
+  glyphs = [];
+  wordGroups = [];
+  lineGroups = [];
 }
 window.clearText = clearText;
 
 // ---------------------------
 // UVs
 // ---------------------------
-function writeUVsNonIndexed_Local(geo, depth){
+function writeUVsNonIndexed_Local(geo, depth) {
   geo.computeBoundingBox();
   geo.computeVertexNormals();
 
-  const bb=geo.boundingBox;
-  const minX=bb.min.x, minY=bb.min.y;
-  const rangeX=Math.max(1e-6, bb.max.x-bb.min.x);
-  const rangeY=Math.max(1e-6, bb.max.y-bb.min.y);
+  const bb = geo.boundingBox;
+  const minX = bb.min.x,
+    minY = bb.min.y;
+  const rangeX = Math.max(1e-6, bb.max.x - bb.min.x);
+  const rangeY = Math.max(1e-6, bb.max.y - bb.min.y);
 
   const useXForSideU = rangeX >= rangeY;
   const d = Math.max(1e-6, depth);
 
-  const pos=geo.attributes.position;
-  const nrm=geo.attributes.normal;
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
 
-  const uv=new Float32Array(pos.count*2);
+  const uv = new Float32Array(pos.count * 2);
 
-  for(let i=0;i<pos.count;i+=3){
-    const nz=nrm.getZ(i);
-    const isCap=Math.abs(nz)>.9;
+  for (let i = 0; i < pos.count; i += 3) {
+    const nz = nrm.getZ(i);
+    const isCap = Math.abs(nz) > 0.9;
 
-    for(let k=0;k<3;k++){
-      const vi=i+k;
-      const x=pos.getX(vi), y=pos.getY(vi), z=pos.getZ(vi);
+    for (let k = 0; k < 3; k++) {
+      const vi = i + k;
+      const x = pos.getX(vi),
+        y = pos.getY(vi),
+        z = pos.getZ(vi);
 
-      let u,v;
-      if(isCap){
-        u=(x-minX)/rangeX; v=(y-minY)/rangeY;
-      }else{
-        u=useXForSideU ? ((x-minX)/rangeX) : ((y-minY)/rangeY);
-        v=z/d;
+      let u, v;
+      if (isCap) {
+        u = (x - minX) / rangeX;
+        v = (y - minY) / rangeY;
+      } else {
+        u = useXForSideU ? (x - minX) / rangeX : (y - minY) / rangeY;
+        v = z / d;
       }
-      uv[vi*2]=clamp(u,0,1);
-      uv[vi*2+1]=clamp(v,0,1);
+      uv[vi * 2] = clamp(u, 0, 1);
+      uv[vi * 2 + 1] = clamp(v, 0, 1);
     }
   }
 
-  geo.setAttribute("uv", new THREE.BufferAttribute(uv,2));
-  geo.attributes.uv.needsUpdate=true;
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  geo.attributes.uv.needsUpdate = true;
 }
 
-function applyWorldUVsNonIndexed(meshes, depth, faceWorld, sideWorld){
-  if(!faceWorld && !sideWorld) return;
+function applyWorldUVsNonIndexed(meshes, depth, faceWorld, sideWorld) {
+  if (!faceWorld && !sideWorld) return;
 
   textGroup.updateMatrixWorld(true);
 
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  const v=new THREE.Vector3();
-  const corners=Array.from({length:8},()=>new THREE.Vector3());
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  const v = new THREE.Vector3();
+  const corners = Array.from({ length: 8 }, () => new THREE.Vector3());
 
-  for(const mesh of meshes){
-    const geo=mesh.geometry;
+  for (const mesh of meshes) {
+    const geo = mesh.geometry;
     geo.computeBoundingBox();
-    const bb=geo.boundingBox;
+    const bb = geo.boundingBox;
 
-    corners[0].set(bb.min.x,bb.min.y,bb.min.z);
-    corners[1].set(bb.max.x,bb.min.y,bb.min.z);
-    corners[2].set(bb.min.x,bb.max.y,bb.min.z);
-    corners[3].set(bb.max.x,bb.max.y,bb.min.z);
-    corners[4].set(bb.min.x,bb.min.y,bb.max.z);
-    corners[5].set(bb.max.x,bb.min.y,bb.max.z);
-    corners[6].set(bb.min.x,bb.max.y,bb.max.z);
-    corners[7].set(bb.max.x,bb.max.y,bb.max.z);
+    corners[0].set(bb.min.x, bb.min.y, bb.min.z);
+    corners[1].set(bb.max.x, bb.min.y, bb.min.z);
+    corners[2].set(bb.min.x, bb.max.y, bb.min.z);
+    corners[3].set(bb.max.x, bb.max.y, bb.min.z);
+    corners[4].set(bb.min.x, bb.min.y, bb.max.z);
+    corners[5].set(bb.max.x, bb.min.y, bb.max.z);
+    corners[6].set(bb.min.x, bb.max.y, bb.max.z);
+    corners[7].set(bb.max.x, bb.max.y, bb.max.z);
 
-    for(const c of corners){
+    for (const c of corners) {
       v.copy(c);
       mesh.localToWorld(v);
-      minX=Math.min(minX,v.x); maxX=Math.max(maxX,v.x);
-      minY=Math.min(minY,v.y); maxY=Math.max(maxY,v.y);
+      minX = Math.min(minX, v.x);
+      maxX = Math.max(maxX, v.x);
+      minY = Math.min(minY, v.y);
+      maxY = Math.max(maxY, v.y);
     }
   }
 
-  const rangeX=Math.max(1e-6, maxX-minX);
-  const rangeY=Math.max(1e-6, maxY-minY);
+  const rangeX = Math.max(1e-6, maxX - minX);
+  const rangeY = Math.max(1e-6, maxY - minY);
   const sideUseX = rangeX >= rangeY;
-  const d=Math.max(1e-6, depth);
+  const d = Math.max(1e-6, depth);
 
-  const wpos=new THREE.Vector3();
+  const wpos = new THREE.Vector3();
 
-  for(const mesh of meshes){
-    const geo=mesh.geometry;
+  for (const mesh of meshes) {
+    const geo = mesh.geometry;
     geo.computeVertexNormals();
 
-    const pos=geo.attributes.position;
-    const nrm=geo.attributes.normal;
+    const pos = geo.attributes.position;
+    const nrm = geo.attributes.normal;
 
-    const uvArr=new Float32Array(pos.count*2);
-    if(geo.attributes.uv?.array && geo.attributes.uv.array.length===uvArr.length){
+    const uvArr = new Float32Array(pos.count * 2);
+    if (geo.attributes.uv?.array && geo.attributes.uv.array.length === uvArr.length) {
       uvArr.set(geo.attributes.uv.array);
     }
 
-    for(let i=0;i<pos.count;i+=3){
-      const nz=nrm.getZ(i);
-      const isCap=Math.abs(nz)>.9;
+    for (let i = 0; i < pos.count; i += 3) {
+      const nz = nrm.getZ(i);
+      const isCap = Math.abs(nz) > 0.9;
 
-      for(let k=0;k<3;k++){
-        const vi=i+k;
-        const x=pos.getX(vi), y=pos.getY(vi), z=pos.getZ(vi);
+      for (let k = 0; k < 3; k++) {
+        const vi = i + k;
+        const x = pos.getX(vi),
+          y = pos.getY(vi),
+          z = pos.getZ(vi);
 
-        if(isCap){
-          if(!faceWorld) continue;
-          wpos.set(x,y,z);
+        if (isCap) {
+          if (!faceWorld) continue;
+          wpos.set(x, y, z);
           mesh.localToWorld(wpos);
-          uvArr[vi*2]   = clamp((wpos.x-minX)/rangeX,0,1);
-          uvArr[vi*2+1] = clamp((wpos.y-minY)/rangeY,0,1);
-        }else{
-          if(!sideWorld) continue;
-          wpos.set(x,y,z);
+          uvArr[vi * 2] = clamp((wpos.x - minX) / rangeX, 0, 1);
+          uvArr[vi * 2 + 1] = clamp((wpos.y - minY) / rangeY, 0, 1);
+        } else {
+          if (!sideWorld) continue;
+          wpos.set(x, y, z);
           mesh.localToWorld(wpos);
-          uvArr[vi*2]   = clamp(sideUseX ? ((wpos.x-minX)/rangeX) : ((wpos.y-minY)/rangeY),0,1);
-          uvArr[vi*2+1] = clamp(z/d,0,1);
+          uvArr[vi * 2] = clamp(sideUseX ? (wpos.x - minX) / rangeX : (wpos.y - minY) / rangeY, 0, 1);
+          uvArr[vi * 2 + 1] = clamp(z / d, 0, 1);
         }
       }
     }
 
-    geo.setAttribute("uv", new THREE.BufferAttribute(uvArr,2));
-    geo.attributes.uv.needsUpdate=true;
+    geo.setAttribute("uv", new THREE.BufferAttribute(uvArr, 2));
+    geo.attributes.uv.needsUpdate = true;
   }
 }
 
 // ---------------------------
 // Glyph building
 // ---------------------------
-function buildGlyph(ch, glyphIndex){
-  const shapes=font.generateShapes(ch, params.size);
+function buildGlyph(ch) {
+  const shapes = font.generateShapes(ch, params.size);
 
-  const shapeGeo=new THREE.ShapeGeometry(shapes);
+  const shapeGeo = new THREE.ShapeGeometry(shapes);
   shapeGeo.computeBoundingBox();
-  const bb=shapeGeo.boundingBox;
-  const width=bb.max.x-bb.min.x;
-  const left=bb.min.x;
+  const bb = shapeGeo.boundingBox;
+  const width = bb.max.x - bb.min.x;
+  const left = bb.min.x;
   shapeGeo.dispose();
 
-  let geo=new THREE.ExtrudeGeometry(shapes,{ depth:params.depth, bevelEnabled:false, steps:1 });
-  geo.translate(-left,0,0);
-  if(geo.index) geo = geo.toNonIndexed();
+  let geo = new THREE.ExtrudeGeometry(shapes, { depth: params.depth, bevelEnabled: false, steps: 1 });
+  geo.translate(-left, 0, 0);
+  if (geo.index) geo = geo.toNonIndexed();
   writeUVsNonIndexed_Local(geo, params.depth);
 
-  // SIDE mat per glyph
+  // per-glyph side clone (so FX + transparency stays safe)
   const sideMatLocal = sideMat.clone();
   sideMatLocal.userData = {};
   sideMatLocal.map = sideMat.map;
@@ -1078,49 +1177,39 @@ function buildGlyph(ch, glyphIndex){
   sideMatLocal.transparent = true;
   sideMatLocal.opacity = 1;
   sideMatLocal.visible = true;
-  _applyFX(sideMatLocal,false);
-  sideMatLocal.needsUpdate=true;
+  _applyFX(sideMatLocal, false);
+  sideMatLocal.needsUpdate = true;
 
-  // FACE mat per glyph only for perLetter
-  let faceMatLocal = faceMat;
-  if(String(params.faceMode||"").toLowerCase() === "perletter"){
-    faceMatLocal = faceMat.clone();
-    faceMatLocal.map = null;
-    faceMatLocal.color.copy(srgbColor("#ffffff"));
-    faceMatLocal.userData = {};
-    _applyFX(faceMatLocal,true);
-    faceMatLocal.needsUpdate = true;
-  }
+  // Face material: will be replaced per glyph if faceMode === perLetter
+  const mesh = new THREE.Mesh(geo, [faceMat, sideMatLocal]);
 
-  const mesh=new THREE.Mesh(geo, [faceMatLocal, sideMatLocal]);
-
-  const edges=new THREE.EdgesGeometry(geo, Number(params.edgeThreshold||1));
-  let pos=Array.from(edges.attributes.position.array);
+  const edges = new THREE.EdgesGeometry(geo, Number(params.edgeThreshold || 1));
+  let pos = Array.from(edges.attributes.position.array);
   edges.dispose();
 
-  if(params.strokeFacesOnly) pos=filterEdgesToFrontBackFaces(pos, params.depth, 1e-4);
+  if (params.strokeFacesOnly) pos = filterEdgesToFrontBackFaces(pos, params.depth, 1e-4);
 
-  const lineGeo=new LineSegmentsGeometry();
+  const lineGeo = new LineSegmentsGeometry();
   lineGeo.setPositions(pos);
 
-  const stroke=new LineSegments2(lineGeo, createStrokeMaterial());
+  const stroke = new LineSegments2(lineGeo, createStrokeMaterial());
   stroke.computeLineDistances();
-  stroke.isLineSegments2=true;
+  stroke.isLineSegments2 = true;
 
   return { width, mesh, stroke };
 }
 
-function applyExtrusionTransform(entry){
-  const d=entry.baseDepth;
-  const sZ=entry.mesh.scale.z;
-  entry.mesh.position.z=(d*sZ)/2;
-  if(entry.stroke){
-    entry.stroke.position.z=entry.mesh.position.z;
-    entry.stroke.scale.z=entry.mesh.scale.z;
+function applyExtrusionTransform(entry) {
+  const d = entry.baseDepth;
+  const sZ = entry.mesh.scale.z;
+  entry.mesh.position.z = (d * sZ) / 2;
+  if (entry.stroke) {
+    entry.stroke.position.z = entry.mesh.position.z;
+    entry.stroke.scale.z = entry.mesh.scale.z;
   }
 }
 
-function _updateDepth(entry){
+function _updateDepth(entry) {
   const breath = entry._breathMul ?? 1;
   const zoff = entry.zOffset ?? 0;
 
@@ -1130,157 +1219,189 @@ function _updateDepth(entry){
   entry.group.position.z = (entry.baseGroupZ ?? 0) + zoff + (entry.animOffsetZ || 0);
 }
 
-function _ensureCharZOffsets(){
-  if(!Array.isArray(params.charZOffsets)) params.charZOffsets=[];
-  const n=glyphs.length;
-  if(params.charZOffsets.length !== n){
-    const next=new Array(n);
-    for(let i=0;i<n;i++) next[i]=Number(params.charZOffsets[i] ?? 0);
-    params.charZOffsets=next;
+function _ensureCharZOffsets() {
+  if (!Array.isArray(params.charZOffsets)) params.charZOffsets = [];
+  const n = glyphs.length;
+  if (params.charZOffsets.length !== n) {
+    const next = new Array(n);
+    for (let i = 0; i < n; i++) next[i] = Number(params.charZOffsets[i] ?? 0);
+    params.charZOffsets = next;
   }
 }
-function _applyCharZOffsetsFromParams(){
+function _applyCharZOffsetsFromParams() {
   _ensureCharZOffsets();
-  for(let i=0;i<glyphs.length;i++){
+  for (let i = 0; i < glyphs.length; i++) {
     glyphs[i].zOffset = Number(params.charZOffsets[i] || 0);
     _updateDepth(glyphs[i]);
   }
 }
 window.__applyCharZOffsets = _applyCharZOffsetsFromParams;
-window.__getCharCount = ()=>glyphs.length;
+window.__getCharCount = () => glyphs.length;
 
-// ---------------------------
 // Per-letter face colors
-// ---------------------------
-function __ensureFacePerLetterColors(){
-  if(!Array.isArray(params.facePerLetterColors)) params.facePerLetterColors=[];
-  const n=glyphs.length;
-  if(params.facePerLetterColors.length !== n){
-    const next=new Array(n);
-    for(let i=0;i<n;i++) next[i]=String(params.facePerLetterColors[i] || "#ffffff");
-    params.facePerLetterColors = next;
+function _ensureFaceLetterColors() {
+  if (!Array.isArray(params.faceLetterColors)) params.faceLetterColors = [];
+  const n = glyphs.length;
+  if (params.faceLetterColors.length !== n) {
+    const next = new Array(n);
+    for (let i = 0; i < n; i++) next[i] = String(params.faceLetterColors[i] ?? "#ffffff");
+    params.faceLetterColors = next;
   }
 }
-function __applyFacePerLetterColors(){
-  __ensureFacePerLetterColors();
-  if(String(params.faceMode||"").toLowerCase() !== "perletter") return;
+function _applyPerLetterFaceMats() {
+  if (!glyphs.length) return;
+  if (params.faceMode !== "perLetter") return;
 
-  for(let i=0;i<glyphs.length;i++){
-    const g=glyphs[i];
-    const m=g.faceMatLocal;
-    if(!m) continue;
-    const hex = params.facePerLetterColors[i] || "#ffffff";
-    try{
-      m.color.copy(srgbColor(hex));
-      m.needsUpdate = true;
-    }catch(e){}
+  _ensureFaceLetterColors();
+
+  for (let i = 0; i < glyphs.length; i++) {
+    const g = glyphs[i];
+    const col = params.faceLetterColors[i] || "#ffffff";
+
+    // dispose previous per-letter face mat if any
+    if (g._faceMatLocal && g._faceMatLocal !== faceMat) {
+      try {
+        g._faceMatLocal.dispose?.();
+      } catch (e) {}
+    }
+
+    // build new face material per glyph
+    let m;
+    if (params.lightingMode === "accurate") {
+      m = new THREE.MeshBasicMaterial({ color: srgbColor(col) });
+    } else {
+      m = new THREE.MeshStandardMaterial({ color: srgbColor(col), metalness: 0.05, roughness: 0.45 });
+    }
+    m.userData = {};
+    _applyFX(m, true);
+    m.needsUpdate = true;
+
+    g._faceMatLocal = m;
+
+    // mesh.material is [face, side]
+    if (Array.isArray(g.mesh.material)) g.mesh.material[0] = m;
+    else g.mesh.material = [m, g.mesh.material];
   }
 }
-window.__ensureFacePerLetterColors = __ensureFacePerLetterColors;
-window.__applyFacePerLetterColors = __applyFacePerLetterColors;
+window.__applyPerLetterFaceMats = _applyPerLetterFaceMats;
 
 // ---------------------------
 // Text layout
 // ---------------------------
-const getAlign=()=>{
-  const a=(params.align||"center").toLowerCase();
-  return (a==="left"||a==="right"||a==="center")?a:"center";
+const getAlign = () => {
+  const a = (params.align || "center").toLowerCase();
+  return a === "left" || a === "right" || a === "center" ? a : "center";
 };
 
-function buildText(){
-  if(!font) return;
+function buildText() {
+  if (!font) return;
 
   clearText();
   rebuildBackground();
 
-  const lines=String(params.text??"").replace(/\r/g,"").split("\n");
-  const lineH=params.size*params.lineSpacing;
-  const align=getAlign();
+  const lines = String(params.text ?? "").replace(/\r/g, "").split("\n");
+  const lineH = params.size * params.lineSpacing;
+  const align = getAlign();
 
-  const built=[];
-  let maxLineW=0;
+  const built = [];
+  let maxLineW = 0;
 
-  for(const line of lines){
-    if(!line.length){ built.push(null); continue; }
-    const chars=Array.from(line);
-    const entries=[];
-    let w=0;
+  for (const line of lines) {
+    if (!line.length) {
+      built.push(null);
+      continue;
+    }
+    const chars = Array.from(line);
+    const entries = [];
+    let w = 0;
 
-    for(let i=0;i<chars.length;i++){
-      const ch=chars[i];
-      if(ch===" "){
-        const sw=params.size*0.35;
-        entries.push({space:true,width:sw});
-        w+=sw;
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      if (ch === " ") {
+        const sw = params.size * 0.35;
+        entries.push({ space: true, width: sw });
+        w += sw;
         continue;
       }
-      // glyphIndex is assigned later; build now without it
-      const g=buildGlyph(ch, 0);
-      entries.push({space:false,width:g.width,glyph:g});
-      w+=g.width;
-      if(i!==chars.length-1) w+=params.charSpacing;
+      const g = buildGlyph(ch);
+      entries.push({ space: false, width: g.width, glyph: g });
+      w += g.width;
+      if (i !== chars.length - 1) w += params.charSpacing;
     }
 
-    maxLineW=Math.max(maxLineW,w);
-    built.push({entries,width:w});
+    maxLineW = Math.max(maxLineW, w);
+    built.push({ entries, width: w });
   }
 
-  let y=0, globalGlyphIndex=0;
+  let y = 0,
+    globalGlyphIndex = 0;
 
-  for(let lineIdx=0; lineIdx<built.length; lineIdx++){
-    const lineEntry=built[lineIdx];
-    if(!lineEntry){ y-=lineH; continue; }
+  for (let lineIdx = 0; lineIdx < built.length; lineIdx++) {
+    const lineEntry = built[lineIdx];
+    if (!lineEntry) {
+      y -= lineH;
+      continue;
+    }
 
-    let x=0;
-    if(align==="left")   x=-maxLineW/2;
-    if(align==="center") x=-lineEntry.width/2;
-    if(align==="right")  x=(maxLineW/2)-lineEntry.width;
+    let x = 0;
+    if (align === "left") x = -maxLineW / 2;
+    if (align === "center") x = -lineEntry.width / 2;
+    if (align === "right") x = maxLineW / 2 - lineEntry.width;
 
-    const currentLineGroup=[];
-    let currentWordGroup=[];
-    const flushWord=()=>{ if(currentWordGroup.length){ wordGroups.push(currentWordGroup); currentWordGroup=[]; } };
+    const currentLineGroup = [];
+    let currentWordGroup = [];
+    const flushWord = () => {
+      if (currentWordGroup.length) {
+        wordGroups.push(currentWordGroup);
+        currentWordGroup = [];
+      }
+    };
 
-    for(let i=0;i<lineEntry.entries.length;i++){
-      const e=lineEntry.entries[i];
-      if(e.space){ flushWord(); x+=e.width; continue; }
+    for (let i = 0; i < lineEntry.entries.length; i++) {
+      const e = lineEntry.entries[i];
+      if (e.space) {
+        flushWord();
+        x += e.width;
+        continue;
+      }
 
-      const {mesh, stroke} = e.glyph;
+      const { mesh, stroke } = e.glyph;
 
-      const group=new THREE.Group();
-      group.position.set(x,y,0);
+      const group = new THREE.Group();
+      group.position.set(x, y, 0);
 
-      const inner=new THREE.Group();
+      const inner = new THREE.Group();
       inner.add(mesh);
-      if(params.strokeWidth>0) inner.add(stroke);
+      if (params.strokeWidth > 0) inner.add(stroke);
       group.add(inner);
 
       textGroup.add(group);
 
       const idx = globalGlyphIndex;
 
-      // stable random direction per glyph (explode / hover)
-      const a = hash01(idx+17) * Math.PI*2;
-      const mag = 0.6 + 0.4*hash01(idx+91);
+      // stable random direction per glyph (explode/hover)
+      const a = hash01(idx + 17) * Math.PI * 2;
+      const mag = 0.6 + 0.4 * hash01(idx + 91);
       const rx = Math.cos(a) * mag;
       const ry = Math.sin(a) * mag;
 
-      // stable axis pick per glyph
-      const axr = hash01(idx+333);
-      const axisPick = (axr < 0.333) ? "x" : (axr < 0.666) ? "y" : "z";
-
-      const entry={
-        group, inner, mesh, stroke,
-
-        // cache local face mat (for perLetter mode)
-        faceMatLocal: Array.isArray(mesh.material) ? mesh.material[0] : null,
+      const entry = {
+        group,
+        inner,
+        mesh,
+        stroke,
 
         baseDepth: params.depth,
 
         baseGroupX: group.position.x,
         baseGroupY: group.position.y,
         baseGroupZ: group.position.z,
-        baseRotX: group.rotation.x, baseRotY: group.rotation.y, baseRotZ: group.rotation.z,
-        baseScaleX: group.scale.x, baseScaleY: group.scale.y, baseScaleZ: group.scale.z,
+        baseRotX: group.rotation.x,
+        baseRotY: group.rotation.y,
+        baseRotZ: group.rotation.z,
+        baseScaleX: group.scale.x,
+        baseScaleY: group.scale.y,
+        baseScaleZ: group.scale.z,
         baseX: x,
 
         depthF: 1,
@@ -1290,7 +1411,7 @@ function buildText(){
         hoverF: 0,
         overlayIndex: idx,
 
-        // animation offsets
+        // animation offsets (GSAP presets)
         animOffsetX: 0,
         animOffsetY: 0,
         animOffsetZ: 0,
@@ -1303,13 +1424,14 @@ function buildText(){
         _rndX: rx,
         _rndY: ry,
 
-        // stable per glyph axis
-        _rndAxisPick: axisPick,
+        // spin360 inertia state
+        _spin360Axis: stablePickAxis(idx, params.hoverSpin360Axis, true),
+        _spin360Dir: stablePickSign(idx, !!params.hoverSpin360RandomDir),
+        _spin360Angle: 0,
+        _spin360Vel: 0,
 
-        // spin360 state
-        spin360Vel: 0,
-        spin360Angle: 0,
-        spin360PrevHot: false,
+        // spin (simple) stable jitter
+        _spinJitter: stableJitter(idx),
       };
 
       _updateDepth(entry);
@@ -1319,19 +1441,18 @@ function buildText(){
       currentLineGroup.push(entry);
 
       x += e.width;
-      if(i!==lineEntry.entries.length-1) x += params.charSpacing;
+      if (i !== lineEntry.entries.length - 1) x += params.charSpacing;
       globalGlyphIndex++;
     }
 
     flushWord();
-    if(currentLineGroup.length) lineGroups.push(currentLineGroup);
+    if (currentLineGroup.length) lineGroups.push(currentLineGroup);
     y -= lineH;
   }
 
-  // center textGroup
-  const box=new THREE.Box3().setFromObject(textGroup);
-  const sizeVec=new THREE.Vector3();
-  const centerVec=new THREE.Vector3();
+  const box = new THREE.Box3().setFromObject(textGroup);
+  const sizeVec = new THREE.Vector3();
+  const centerVec = new THREE.Vector3();
   box.getSize(sizeVec);
   box.getCenter(centerVec);
 
@@ -1339,17 +1460,19 @@ function buildText(){
   textGroup.position.y -= centerVec.y;
   textGroup.position.z -= centerVec.z;
 
-  frame.maxDim = Math.max(sizeVec.x,sizeVec.y,sizeVec.z);
+  frame.maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
 
-  const meshes = glyphs.map(g=>g.mesh);
+  const meshes = glyphs.map((g) => g.mesh);
 
   // IMPORTANT:
-  // - checker faces force WORLD uv so checks are consistent across glyph widths (fixes "I")
+  // - Face checker is forced WORLD UV for consistent scale across letters.
+  // - Gradient can be glyph/world based on faceUVSpace
   const faceWorld =
-    (String(params.faceMode||"").toLowerCase() === "checker") ||
-    (params.faceMode!=="solid" && params.faceUVSpace==="world");
+    params.faceMode === "checker"
+      ? true
+      : params.faceMode !== "solid" && params.faceMode !== "perLetter" && params.faceUVSpace === "world";
 
-  const sideWorld = (params.sideMode==="gradient" && params.sideUVSpace==="world");
+  const sideWorld = params.sideMode === "gradient" && params.sideUVSpace === "world";
 
   applyWorldUVsNonIndexed(meshes, params.depth, faceWorld, sideWorld);
 
@@ -1359,15 +1482,21 @@ function buildText(){
   resize();
   reframeToText();
 
-  renderer.compile(scene,camera);
+  renderer.compile(scene, camera);
 
   _applyCharZOffsetsFromParams();
 
-  // per-letter face colors
-  __applyFacePerLetterColors();
-  try{ window.__rebuildFaceColorControls?.(); }catch(e){}
+  // Apply per-letter face mats if enabled
+  _applyPerLetterFaceMats();
 
-  try{ window.__rebuildZControls?.(); }catch(e){}
+  try {
+    window.__rebuildZControls?.();
+  } catch (e) {}
+
+  try {
+    window.__rebuildFaceColorControls?.();
+  } catch (e) {}
+
   _syncFXUniforms();
 }
 window.buildText = buildText;
@@ -1375,62 +1504,79 @@ window.buildText = buildText;
 // ---------------------------
 // Fonts
 // ---------------------------
-async function setFontFromUrl(url){
-  const u=String(url||"").trim();
-  if(!u) return;
-  try{
-    await new Promise((res,rej)=>fontLoader.load(u,f=>{font=f;res();},undefined,rej));
+async function setFontFromUrl(url) {
+  const u = String(url || "").trim();
+  if (!u) return;
+  try {
+    await new Promise((res, rej) => fontLoader.load(u, (f) => {
+      font = f;
+      res();
+    }, undefined, rej));
     buildText();
-    if(window.__tp_animPlaying) playAnimation();
-  }catch(e){
+    if (window.__tp_animPlaying) playAnimation();
+  } catch (e) {
     console.error(e);
     alert("Font load failed. Use a THREE typeface JSON (.typeface.json).");
   }
 }
-function setFontFromUploadedJsonText(t){
-  try{
+function setFontFromUploadedJsonText(t) {
+  try {
     font = fontLoader.parse(JSON.parse(t));
     buildText();
-    if(window.__tp_animPlaying) playAnimation();
-  }catch(e){
+    if (window.__tp_animPlaying) playAnimation();
+  } catch (e) {
     console.error(e);
     alert("Could not parse font. Upload a THREE typeface JSON (.typeface.json).");
   }
 }
 window.setFontFromUploadedJsonText = setFontFromUploadedJsonText;
 
-async function applyFontSelection(){
-  if(params.fontSource==="preset") return setFontFromUrl(FONT_PRESETS[params.fontPreset]);
-  if(params.fontSource==="url") return setFontFromUrl(params.fontUrl);
+async function applyFontSelection() {
+  if (params.fontSource === "preset") return setFontFromUrl(FONT_PRESETS[params.fontPreset]);
+  if (params.fontSource === "url") return setFontFromUrl(params.fontUrl);
 }
 window.applyFontSelection = applyFontSelection;
 
 // ---------------------------
 // Camera
 // ---------------------------
-function tweenCamera(toPos,toTarget,duration=.85){
-  if(!gsap){
+function tweenCamera(toPos, toTarget, duration = 0.85) {
+  if (!gsap) {
     camera.position.copy(toPos);
     controls.target.copy(toTarget);
     controls.update();
     return;
   }
-  gsap.to(camera.position,{x:toPos.x,y:toPos.y,z:toPos.z,duration,ease:"power2.inOut",onUpdate:()=>controls.update()});
-  gsap.to(controls.target,{x:toTarget.x,y:toTarget.y,z:toTarget.z,duration,ease:"power2.inOut",onUpdate:()=>controls.update()});
+  gsap.to(camera.position, {
+    x: toPos.x,
+    y: toPos.y,
+    z: toPos.z,
+    duration,
+    ease: "power2.inOut",
+    onUpdate: () => controls.update(),
+  });
+  gsap.to(controls.target, {
+    x: toTarget.x,
+    y: toTarget.y,
+    z: toTarget.z,
+    duration,
+    ease: "power2.inOut",
+    onUpdate: () => controls.update(),
+  });
 }
-function applyCameraPreset(){
-  const dist=Math.max(420,frame.maxDim*1.25);
-  const lift=Math.max(120,frame.maxDim*.35);
+function applyCameraPreset() {
+  const dist = Math.max(420, frame.maxDim * 1.25);
+  const lift = Math.max(120, frame.maxDim * 0.35);
   let pos;
-  if(params.cameraPreset==="front") pos=new THREE.Vector3(0,0,dist);
-  else if(params.cameraPreset==="isoLeft") pos=new THREE.Vector3(-dist,lift,dist);
-  else pos=new THREE.Vector3(dist,lift,dist);
-  tweenCamera(pos,new THREE.Vector3(0,0,0),.85);
+  if (params.cameraPreset === "front") pos = new THREE.Vector3(0, 0, dist);
+  else if (params.cameraPreset === "isoLeft") pos = new THREE.Vector3(-dist, lift, dist);
+  else pos = new THREE.Vector3(dist, lift, dist);
+  tweenCamera(pos, new THREE.Vector3(0, 0, 0), 0.85);
 }
-function reframeToText(){
-  const dist=Math.max(420,frame.maxDim*1.25);
-  const lift=Math.max(140,frame.maxDim*.35);
-  tweenCamera(new THREE.Vector3(0,lift*.2,dist),new THREE.Vector3(0,0,0),.85);
+function reframeToText() {
+  const dist = Math.max(420, frame.maxDim * 1.25);
+  const lift = Math.max(140, frame.maxDim * 0.35);
+  tweenCamera(new THREE.Vector3(0, lift * 0.2, dist), new THREE.Vector3(0, 0, 0), 0.85);
 }
 window.applyCameraPreset = applyCameraPreset;
 window.reframeToText = reframeToText;
@@ -1438,75 +1584,96 @@ window.reframeToText = reframeToText;
 // ---------------------------
 // GSAP Preset Animation (NO CYLINDER)
 // ---------------------------
-function stopAnimation(){
-  if(tl){ tl.kill(); tl=null; }
-  for(const g of glyphs){
-    g.depthF=1;
+function stopAnimation() {
+  if (tl) {
+    tl.kill();
+    tl = null;
+  }
+  for (const g of glyphs) {
+    g.depthF = 1;
 
-    g.animOffsetX = 0; g.animOffsetY = 0; g.animOffsetZ = 0;
-    g.animRotX = 0; g.animRotY = 0; g.animRotZ = 0;
+    g.animOffsetX = 0;
+    g.animOffsetY = 0;
+    g.animOffsetZ = 0;
+    g.animRotX = 0;
+    g.animRotY = 0;
+    g.animRotZ = 0;
     g.animScale = 1;
 
-    g.group.rotation.x=g.baseRotX||0;
-    g.group.rotation.y=g.baseRotY||0;
-    g.group.rotation.z=g.baseRotZ||0;
-    g.group.scale.set(g.baseScaleX||1,g.baseScaleY||1,g.baseScaleZ||1);
+    g.group.rotation.x = g.baseRotX || 0;
+    g.group.rotation.y = g.baseRotY || 0;
+    g.group.rotation.z = g.baseRotZ || 0;
+    g.group.scale.set(g.baseScaleX || 1, g.baseScaleY || 1, g.baseScaleZ || 1);
 
     _updateDepth(g);
   }
   _applyCharZOffsetsFromParams();
+  // per-letter face mats remain
 }
 window.stopAnimation = stopAnimation;
 
-function playAnimation(){
-  if(!gsap || !glyphs.length) return;
-  if(tl){ tl.kill(); tl=null; }
+function playAnimation() {
+  if (!gsap || !glyphs.length) return;
+  if (tl) {
+    tl.kill();
+    tl = null;
+  }
 
-  const duration=Number(params.animSpeed||1.2);
-  const stagger=Number(params.animStagger||.03);
-  const ease=params.animEase||"power2.inOut";
-  const loop=!!params.animLoop;
-  const minF=Math.max(0,Number(params.animMinPct||0)/100);
-  const maxF=Math.max(0,Number(params.animMaxPct||100)/100);
+  const duration = Number(params.animSpeed || 1.2);
+  const stagger = Number(params.animStagger || 0.03);
+  const ease = params.animEase || "power2.inOut";
+  const loop = !!params.animLoop;
+  const minF = Math.max(0, Number(params.animMinPct || 0) / 100);
+  const maxF = Math.max(0, Number(params.animMaxPct || 100) / 100);
 
-  let groups=[];
-  if(params.animStaggerMode==="word") groups=wordGroups;
-  else if(params.animStaggerMode==="line") groups=lineGroups;
-  else groups=glyphs.map(g=>[g]);
+  let groups = [];
+  if (params.animStaggerMode === "word") groups = wordGroups;
+  else if (params.animStaggerMode === "line") groups = lineGroups;
+  else groups = glyphs.map((g) => [g]);
 
-  const proxies=groups.filter(g=>g&&g.length).map(members=>({
-    f:minF, rx:0, ry:0, rz:0, s:1,
-    ex:0,
-    members
-  }));
+  const proxies = groups
+    .filter((g) => g && g.length)
+    .map((members) => ({
+      f: minF,
+      rx: 0,
+      ry: 0,
+      rz: 0,
+      s: 1,
+      ex: 0,
+      members,
+    }));
 
-  const rotRad=THREE.MathUtils.degToRad(Number(params.animRotateDeg||35));
-  const inflateAmt=Number(params.animInflate||.18);
+  const rotRad = THREE.MathUtils.degToRad(Number(params.animRotateDeg || 35));
+  const inflateAmt = Number(params.animInflate || 0.18);
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.animExplodeTwistDeg ?? 45));
 
-  function applyProxy(p){
-    for(const m of p.members){
-      const bx = (m.baseGroupX||0);
-      const by = (m.baseGroupY||0);
+  function applyProxy(p) {
+    for (const m of p.members) {
+      const bx = m.baseGroupX || 0;
+      const by = m.baseGroupY || 0;
 
-      let ox=0, oy=0, oz=0;
-      let arx=0, ary=0, arz=0;
-      let asc=1;
+      let ox = 0,
+        oy = 0,
+        oz = 0;
+      let arx = 0,
+        ary = 0,
+        arz = 0;
+      let asc = 1;
 
-      if(p.ex && p.ex !== 0){
-        ox += (m._rndX||0) * explodeAmt * p.ex;
-        oy += (m._rndY||0) * explodeAmt * p.ex;
-        arz += (m._rndX||0) * explodeTwist * p.ex;
+      if (p.ex && p.ex !== 0) {
+        ox += (m._rndX || 0) * explodeAmt * p.ex;
+        oy += (m._rndY || 0) * explodeAmt * p.ex;
+        arz += (m._rndX || 0) * explodeTwist * p.ex;
       }
 
-      arx += (p.rx||0);
-      ary += (p.ry||0);
-      arz += (p.rz||0);
+      arx += p.rx || 0;
+      ary += p.ry || 0;
+      arz += p.rz || 0;
 
-      asc *= (p.s||1);
+      asc *= p.s || 1;
 
       m.animOffsetX = ox;
       m.animOffsetY = oy;
@@ -1516,106 +1683,117 @@ function playAnimation(){
       m.animRotZ = arz;
       m.animScale = asc;
 
-      m.group.rotation.x=(m.baseRotX||0) + m.animRotX;
-      m.group.rotation.y=(m.baseRotY||0) + m.animRotY;
-      m.group.rotation.z=(m.baseRotZ||0) + m.animRotZ;
+      m.group.rotation.x = (m.baseRotX || 0) + m.animRotX;
+      m.group.rotation.y = (m.baseRotY || 0) + m.animRotY;
+      m.group.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
 
-      const bsx=(m.baseScaleX||1), bsy=(m.baseScaleY||1), bsz=(m.baseScaleZ||1);
-      m.group.scale.set(bsx*m.animScale, bsy*m.animScale, bsz);
+      const bsx = m.baseScaleX || 1,
+        bsy = m.baseScaleY || 1,
+        bsz = m.baseScaleZ || 1;
+      m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
 
-      m.depthF = (typeof p.f==="number") ? p.f : 1;
+      m.depthF = typeof p.f === "number" ? p.f : 1;
       _updateDepth(m);
     }
   }
 
-  for(const p of proxies) applyProxy(p);
+  for (const p of proxies) applyProxy(p);
 
-  tl=gsap.timeline({repeat:loop?-1:0,yoyo:true});
-  const preset=(params.animPreset||"depth").toLowerCase();
-  const alsoDepth=(preset==="depth")?true:!!params.animAlsoDepth;
+  tl = gsap.timeline({ repeat: loop ? -1 : 0, yoyo: true });
+  const preset = (params.animPreset || "depth").toLowerCase();
+  const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
 
-  const tweenVars={
-    duration, ease,
-    stagger:{each:stagger,from:params.animStaggerFrom},
-    onUpdate:()=>{ for(const p of proxies) applyProxy(p); _applyCharZOffsetsFromParams(); }
+  const tweenVars = {
+    duration,
+    ease,
+    stagger: { each: stagger, from: params.animStaggerFrom },
+    onUpdate: () => {
+      for (const p of proxies) applyProxy(p);
+      _applyCharZOffsetsFromParams();
+    },
   };
 
-  for(const p of proxies){
-    p.f=alsoDepth?minF:undefined;
-    p.rx=0; p.ry=0; p.rz=0; p.s=1;
-    p.ex=0;
+  for (const p of proxies) {
+    p.f = alsoDepth ? minF : undefined;
+    p.rx = 0;
+    p.ry = 0;
+    p.rz = 0;
+    p.s = 1;
+    p.ex = 0;
   }
 
-  const axis=(params.animAxis||"y").toLowerCase();
-  const depthTarget=maxF;
+  const axis = (params.animAxis || "y").toLowerCase();
+  const depthTarget = maxF;
 
-  if(preset==="depth"){
-    tl.to(proxies,{...tweenVars,f:depthTarget},0);
-
-  }else if(preset==="twist"){
-    const vars={...tweenVars};
-    if(axis==="x") vars.rx=rotRad; else vars.ry=rotRad;
-    if(alsoDepth) vars.f=depthTarget;
-    tl.to(proxies,vars,0);
-
-  }else if(preset==="wobble"){
-    const vars={...tweenVars,rz:rotRad};
-    if(alsoDepth) vars.f=depthTarget;
-    tl.to(proxies,vars,0);
-
-  }else if(preset==="inflate"){
-    const vars={...tweenVars,s:1+inflateAmt};
-    if(alsoDepth) vars.f=depthTarget;
-    tl.to(proxies,vars,0);
-
-  }else if(preset==="spin"){
-    const vars={...tweenVars};
-    if(axis==="x") vars.rx=spinRad;
-    else if(axis==="y") vars.ry=spinRad;
-    else vars.rz=spinRad;
-    if(alsoDepth) vars.f=depthTarget;
-    tl.to(proxies,vars,0);
-
-  }else if(preset==="explode"){
-    const vars={...tweenVars, ex:1};
-    if(alsoDepth) vars.f=depthTarget;
-    tl.to(proxies,vars,0);
-
-  }else{
-    tl.to(proxies,{...tweenVars,f:depthTarget},0);
+  if (preset === "depth") {
+    tl.to(proxies, { ...tweenVars, f: depthTarget }, 0);
+  } else if (preset === "twist") {
+    const vars = { ...tweenVars };
+    if (axis === "x") vars.rx = rotRad;
+    else vars.ry = rotRad;
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+  } else if (preset === "wobble") {
+    const vars = { ...tweenVars, rz: rotRad };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+  } else if (preset === "inflate") {
+    const vars = { ...tweenVars, s: 1 + inflateAmt };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+  } else if (preset === "spin") {
+    const vars = { ...tweenVars };
+    if (axis === "x") vars.rx = spinRad;
+    else if (axis === "y") vars.ry = spinRad;
+    else vars.rz = spinRad;
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+  } else if (preset === "explode") {
+    const vars = { ...tweenVars, ex: 1 };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+  } else {
+    tl.to(proxies, { ...tweenVars, f: depthTarget }, 0);
   }
 }
 window.playAnimation = playAnimation;
 
 // ---------------------------
-// Hover (adds spin360)
+// Hover (adds spin360 inertia mode + upgrades spin axis/random)
 // ---------------------------
-let pointerActive=false;
-let pointerNDC=new THREE.Vector2(0,0);
-const cursorLocal=new THREE.Vector3(0,0,0);
-const cursorLocalTarget=new THREE.Vector3(0,0,0);
-const _cursorDelta=new THREE.Vector3();
+let pointerActive = false;
+let pointerNDC = new THREE.Vector2(0, 0);
+const cursorLocal = new THREE.Vector3(0, 0, 0);
+const cursorLocalTarget = new THREE.Vector3(0, 0, 0);
+const _cursorDelta = new THREE.Vector3();
 
-// cursor speed for inertia feel
-let _prevCursorLocal = new THREE.Vector3(0,0,0);
+let _prevCursorLocal = new THREE.Vector3(0, 0, 0);
 let _cursorSpeed = 0;
 
-function _updatePointerFromEvent(e){
-  const r=renderer.domElement.getBoundingClientRect();
-  const x=e.clientX-r.left, y=e.clientY-r.top;
-  pointerActive=(x>=0&&y>=0&&x<=r.width&&y<=r.height);
-  if(!pointerActive) return;
-  pointerNDC.x=(x/r.width)*2-1;
-  pointerNDC.y=-(y/r.height)*2+1;
+function _updatePointerFromEvent(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  const x = e.clientX - r.left,
+    y = e.clientY - r.top;
+  pointerActive = x >= 0 && y >= 0 && x <= r.width && y <= r.height;
+  if (!pointerActive) return;
+  pointerNDC.x = (x / r.width) * 2 - 1;
+  pointerNDC.y = -(y / r.height) * 2 + 1;
 }
-function onPointerMove(e){ _updatePointerFromEvent(e); }
-function onPointerEnter(e){ _updatePointerFromEvent(e); }
-function onPointerLeave(){ pointerActive=false; _hoverStrength=0; }
+function onPointerMove(e) {
+  _updatePointerFromEvent(e);
+}
+function onPointerEnter(e) {
+  _updatePointerFromEvent(e);
+}
+function onPointerLeave() {
+  pointerActive = false;
+  _hoverStrength = 0;
+}
 
-function getCursorLocalOnTextPlane(outLocal){
-  _raycaster.setFromCamera(pointerNDC,camera);
-  const ok=_raycaster.ray.intersectPlane(_stablePlane,_hit);
-  if(!ok) return false;
+function getCursorLocalOnTextPlane(outLocal) {
+  _raycaster.setFromCamera(pointerNDC, camera);
+  const ok = _raycaster.ray.intersectPlane(_stablePlane, _hit);
+  if (!ok) return false;
 
   _hoverWorld.copy(_hit);
   outLocal.copy(_hit);
@@ -1623,229 +1801,295 @@ function getCursorLocalOnTextPlane(outLocal){
   return true;
 }
 
-function resetHoverTransforms(){
-  const chase=clamp(Number(params.liftSmoothing||.18),.001,1);
-  for(const g of glyphs){
-    const bx = (g.baseGroupX||0) + (g.animOffsetX||0);
-    const by = (g.baseGroupY||0) + (g.animOffsetY||0);
+function resetHoverTransforms() {
+  const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
+  for (const g of glyphs) {
+    const bx = (g.baseGroupX || 0) + (g.animOffsetX || 0);
+    const by = (g.baseGroupY || 0) + (g.animOffsetY || 0);
 
-    g.group.position.x=lerp(g.group.position.x, bx, chase);
-    g.group.position.y=lerp(g.group.position.y, by, chase);
+    g.group.position.x = lerp(g.group.position.x, bx, chase);
+    g.group.position.y = lerp(g.group.position.y, by, chase);
 
-    const brx=(g.baseRotX||0) + (g.animRotX||0);
-    const bry=(g.baseRotY||0) + (g.animRotY||0);
-    const brz=(g.baseRotZ||0) + (g.animRotZ||0);
+    const brx = (g.baseRotX || 0) + (g.animRotX || 0);
+    const bry = (g.baseRotY || 0) + (g.animRotY || 0);
+    const brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
 
-    g.group.rotation.x=lerp(g.group.rotation.x, brx, chase);
-    g.group.rotation.y=lerp(g.group.rotation.y, bry, chase);
-    g.group.rotation.z=lerp(g.group.rotation.z, brz, chase);
+    // spin360 inertia still applies even when hover isn’t active: integrate to 0 via damping
+    // (we add it below during updateHoverEffects; here we only reset base)
+    g.group.rotation.x = lerp(g.group.rotation.x, brx, chase);
+    g.group.rotation.y = lerp(g.group.rotation.y, bry, chase);
+    g.group.rotation.z = lerp(g.group.rotation.z, brz, chase);
 
-    const bsx=(g.baseScaleX||1) * (g.animScale||1);
-    const bsy=(g.baseScaleY||1) * (g.animScale||1);
-    const bsz=(g.baseScaleZ||1);
+    const bsx = (g.baseScaleX || 1) * (g.animScale || 1);
+    const bsy = (g.baseScaleY || 1) * (g.animScale || 1);
+    const bsz = g.baseScaleZ || 1;
 
-    g.group.scale.x=lerp(g.group.scale.x, bsx, chase);
-    g.group.scale.y=lerp(g.group.scale.y, bsy, chase);
-    g.group.scale.z=lerp(g.group.scale.z, bsz, chase);
+    g.group.scale.x = lerp(g.group.scale.x, bsx, chase);
+    g.group.scale.y = lerp(g.group.scale.y, bsy, chase);
+    g.group.scale.z = lerp(g.group.scale.z, bsz, chase);
   }
 }
 
-function updateHoverEffects(){
-  if(!glyphs.length || (params.hoverMode||"none")==="none"){ resetHoverTransforms(); _hoverStrength=0; return; }
-  if(!params.proximityLift){ resetHoverTransforms(); _hoverStrength=0; return; }
-  if(!pointerActive){ resetHoverTransforms(); _hoverStrength=0; return; }
+function _integrateSpin360(g, dt) {
+  // damping
+  const damp = Math.max(0.001, Number(params.hoverSpin360Damping ?? 7.5));
+  const k = Math.exp(-damp * dt); // smooth exponential decay
+  g._spin360Vel *= k;
 
-  if(getCursorLocalOnTextPlane(cursorLocalTarget)){
-    const ms=clamp(Number(params.cursorSmoothing||.85),0,.98);
-    const a=1-ms;
-    _cursorDelta.copy(cursorLocalTarget).sub(cursorLocal);
-    const maxStep=40;
-    const len=_cursorDelta.length();
-    if(len>maxStep) _cursorDelta.multiplyScalar(maxStep/len);
-    cursorLocal.addScaledVector(_cursorDelta,a);
+  // integrate angle
+  g._spin360Angle += g._spin360Vel * dt;
 
-    // cursor speed (smoothed)
-    const dCur = cursorLocal.distanceTo(_prevCursorLocal);
-    _cursorSpeed = lerp(_cursorSpeed, dCur, 0.25);
-    _prevCursorLocal.copy(cursorLocal);
-  }else{
+  // keep bounded (optional)
+  if (g._spin360Angle > Math.PI * 8) g._spin360Angle -= Math.PI * 8;
+  if (g._spin360Angle < -Math.PI * 8) g._spin360Angle += Math.PI * 8;
+}
+
+function updateHoverEffects() {
+  if (!glyphs.length || (params.hoverMode || "none") === "none") {
+    // still integrate spin360 inertia so it can finish easing out
+    for (const g of glyphs) _integrateSpin360(g, _fxDt);
     resetHoverTransforms();
-    _hoverStrength=0;
+    _hoverStrength = 0;
+    return;
+  }
+  if (!params.proximityLift) {
+    for (const g of glyphs) _integrateSpin360(g, _fxDt);
+    resetHoverTransforms();
+    _hoverStrength = 0;
+    return;
+  }
+  if (!pointerActive) {
+    for (const g of glyphs) _integrateSpin360(g, _fxDt);
+    resetHoverTransforms();
+    _hoverStrength = 0;
     return;
   }
 
-  const r=Math.max(1e-6,Number(params.proximityRadiusWorld||140));
-  const invR=1/r;
-  const chase=clamp(Number(params.liftSmoothing||.18),.001,1);
-  const mode=params.proximityFalloff||"smooth";
-  const lift=Number(params.proximityLiftAmount||60);
-  const rot=THREE.MathUtils.degToRad(Number(params.hoverRotateDeg||20));
-  const tilt=THREE.MathUtils.degToRad(Number(params.hoverTiltDeg||18));
-  const pulse=Number(params.hoverPulse||.12);
-  const hoverMode=(params.hoverMode||"lift").toLowerCase();
+  if (getCursorLocalOnTextPlane(cursorLocalTarget)) {
+    const ms = clamp(Number(params.cursorSmoothing || 0.85), 0, 0.98);
+    const a = 1 - ms;
+    _cursorDelta.copy(cursorLocalTarget).sub(cursorLocal);
+    const maxStep = 40;
+    const len = _cursorDelta.length();
+    if (len > maxStep) _cursorDelta.multiplyScalar(maxStep / len);
+    cursorLocal.addScaledVector(_cursorDelta, a);
+  } else {
+    for (const g of glyphs) _integrateSpin360(g, _fxDt);
+    resetHoverTransforms();
+    _hoverStrength = 0;
+    return;
+  }
 
-  const sweepOn=!!params.magneticSweepOn;
-  const sweepAmt=Number(params.sweepAmount||0);
-  const sweepBias=Number(params.sweepBias||1);
-  const sweepYMix=Number(params.sweepYMix||0.25);
+  // compute cursor speed in local space
+  const dist = cursorLocal.distanceTo(_prevCursorLocal);
+  _cursorSpeed = dist / Math.max(1e-6, _fxDt);
+  _prevCursorLocal.copy(cursorLocal);
 
-  const spinRad = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg ?? 120));
+  const r = Math.max(1e-6, Number(params.proximityRadiusWorld || 140));
+  const invR = 1 / r;
+  const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
+  const mode = params.proximityFalloff || "smooth";
+  const lift = Number(params.proximityLiftAmount || 60);
+  const rot = THREE.MathUtils.degToRad(Number(params.hoverRotateDeg || 20));
+  const tilt = THREE.MathUtils.degToRad(Number(params.hoverTiltDeg || 18));
+  const pulse = Number(params.hoverPulse || 0.12);
+  const hoverMode = (params.hoverMode || "lift").toLowerCase();
+
+  const sweepOn = !!params.magneticSweepOn;
+  const sweepAmt = Number(params.sweepAmount || 0);
+  const sweepBias = Number(params.sweepBias || 1);
+  const sweepYMix = Number(params.sweepYMix || 0.25);
+
+  // Spin (simple)
+  const spinBaseRad = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg ?? 120));
+  const spinAxisBase = String(params.hoverSpinAxis || "z").toLowerCase();
+  const spinRandDir = !!params.hoverSpinRandomDir;
+  const spinRandAmt = !!params.hoverSpinRandomAmount;
+  const spinJit = clamp01(Number(params.hoverSpinAmountJitter ?? 0.35));
+
+  // Explode (unchanged)
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
 
-  let maxF=0;
+  // Spin360 inertia tuning
+  const spin360Boost = Math.max(0, Number(params.hoverSpin360Boost ?? 0.018));
+  const spin360MaxVel = Math.max(0.1, Number(params.hoverSpin360MaxVel ?? 10.0));
+  const spin360AxisBase = String(params.hoverSpin360Axis || "random").toLowerCase();
 
-  for(const g of glyphs){
-    const c={x:(g.baseX||0),y:(g.baseGroupY||0)};
-    const dx=cursorLocal.x-c.x, dy=cursorLocal.y-c.y;
-    const d=Math.sqrt(dx*dx+dy*dy);
-    const u=d<r?(1-d*invR):0;
-    g.hoverF=falloff(u,mode);
-    maxF=Math.max(maxF,g.hoverF);
+  let maxF = 0;
+
+  for (const g of glyphs) {
+    const c = { x: g.baseX || 0, y: g.baseGroupY || 0 };
+    const dx = cursorLocal.x - c.x,
+      dy = cursorLocal.y - c.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const u = d < r ? 1 - d * invR : 0;
+    g.hoverF = falloff(u, mode);
+    maxF = Math.max(maxF, g.hoverF);
   }
-  _hoverStrength=maxF;
+  _hoverStrength = maxF;
 
-  for(const g of glyphs){
-    const f=g.hoverF||0;
+  for (const g of glyphs) {
+    const f = g.hoverF || 0;
 
-    const bx = (g.baseGroupX||0) + (g.animOffsetX||0);
-    const by = (g.baseGroupY||0) + (g.animOffsetY||0);
+    const bx = (g.baseGroupX || 0) + (g.animOffsetX || 0);
+    const by = (g.baseGroupY || 0) + (g.animOffsetY || 0);
 
-    const brx=(g.baseRotX||0) + (g.animRotX||0);
-    const bry=(g.baseRotY||0) + (g.animRotY||0);
-    const brz=(g.baseRotZ||0) + (g.animRotZ||0);
+    const brx = (g.baseRotX || 0) + (g.animRotX || 0);
+    const bry = (g.baseRotY || 0) + (g.animRotY || 0);
+    const brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
 
-    const bsx=(g.baseScaleX||1) * (g.animScale||1);
-    const bsy=(g.baseScaleY||1) * (g.animScale||1);
-    const bsz=(g.baseScaleZ||1);
+    const bsx = (g.baseScaleX || 1) * (g.animScale || 1);
+    const bsy = (g.baseScaleY || 1) * (g.animScale || 1);
+    const bsz = g.baseScaleZ || 1;
 
-    const c={x:(g.baseX||0),y:(g.baseGroupY||0)};
-    const dx=cursorLocal.x-c.x, dy=cursorLocal.y-c.y;
-    const d=Math.sqrt(dx*dx+dy*dy)||1;
+    const c = { x: g.baseX || 0, y: g.baseGroupY || 0 };
+    const dx = cursorLocal.x - c.x,
+      dy = cursorLocal.y - c.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    let tx=bx, ty=by;
-    let rx=brx, ry=bry, rz=brz;
-    let sx=bsx, sy=bsy, sz=bsz;
+    let tx = bx,
+      ty = by;
+    let rx = brx,
+      ry = bry,
+      rz = brz;
+    let sx = bsx,
+      sy = bsy,
+      sz = bsz;
 
-    if(hoverMode==="lift"){
-      ty += lift*f;
+    // Integrate spin360 inertia every frame
+    // (then, if hovered, add impulse)
+    if (!g._spin360Axis) g._spin360Axis = stablePickAxis(g.overlayIndex || 0, spin360AxisBase, true);
+    _integrateSpin360(g, _fxDt);
 
-    }else if(hoverMode==="rotate"){
+    if (hoverMode === "lift") {
+      ty += lift * f;
+    } else if (hoverMode === "rotate") {
       const ax = String(params.hoverRotateAxis || "z").toLowerCase();
       let pick = ax;
 
-      if(pick === "random"){
-        pick = (g._rndAxisPick || "z");
+      if (pick === "random") pick = stablePickAxis(g.overlayIndex || 0, "random", true);
+
+      if (pick === "x") rx += rot * f;
+      else if (pick === "y") ry += rot * f;
+      else rz += rot * f;
+    } else if (hoverMode === "tilt") {
+      const nx = dx / d,
+        ny = dy / d;
+      rx += -ny * tilt * f;
+      ry += nx * tilt * f;
+    } else if (hoverMode === "pulse") {
+      const s = 1 + pulse * f;
+      sx *= s;
+      sy *= s;
+    } else if (hoverMode === "repel") {
+      const minD = Math.max(0.001, Number(params.repelMinDistance ?? 6));
+      const amt = Number(params.repelAmount ?? 80);
+      const cap = Number(params.repelClamp ?? 140);
+      const dd = Math.max(d, minD);
+
+      const nx = -dx / dd;
+      const ny = -dy / dd;
+
+      let push = amt * f;
+      if (push > cap) push = cap;
+
+      tx += nx * push;
+      ty += ny * push;
+    } else if (hoverMode === "spin") {
+      // Updated: axis + optional random dir + optional random amount
+      let ax = spinAxisBase;
+      if (ax === "random") ax = stablePickAxis(g.overlayIndex || 0, "random", true);
+
+      const dir = stablePickSign(g.overlayIndex || 0, spinRandDir);
+      let amt = spinBaseRad;
+
+      if (spinRandAmt) {
+        // jitter around base, stable
+        const j = g._spinJitter || 0;
+        amt = spinBaseRad * (1 + j * spinJit);
       }
 
-      if(pick === "x") rx += rot*f;
-      else if(pick === "y") ry += rot*f;
-      else rz += rot*f;
+      const sgnAmt = amt * dir;
+      if (ax === "x") rx += sgnAmt * f;
+      else if (ax === "y") ry += sgnAmt * f;
+      else rz += sgnAmt * f;
 
-    }else if(hoverMode==="tilt"){
-      const nx=dx/d, ny=dy/d;
-      rx += (-ny)*tilt*f;
-      ry += ( nx)*tilt*f;
+      const s = 1 + (pulse * 0.6) * f;
+      sx *= s;
+      sy *= s;
+    } else if (hoverMode === "spin360") {
+      // NEW: impulse adds to angular velocity based on cursor speed + hover falloff
+      // Impulse magnitude: cursorSpeed * boost * f
+      const impulse = _cursorSpeed * spin360Boost * f;
 
-    }else if(hoverMode==="pulse"){
-      const s=1+pulse*f;
-      sx*=s; sy*=s;
+      // choose axis per glyph (stable) possibly forced by UI
+      const pickAxis =
+        spin360AxisBase === "random" ? g._spin360Axis : String(spin360AxisBase || "z").toLowerCase();
 
-    }else if(hoverMode==="repel"){
-      const minD=Math.max(0.001,Number(params.repelMinDistance ?? 6));
-      const amt =Number(params.repelAmount ?? 80);
-      const cap =Number(params.repelClamp ?? 140);
-      const dd=Math.max(d,minD);
+      // direction
+      const dir = stablePickSign(g.overlayIndex || 0, !!params.hoverSpin360RandomDir);
 
-      const nx = (-dx)/dd;
-      const ny = (-dy)/dd;
+      g._spin360Vel += impulse * dir;
 
-      let push=amt*f;
-      if(push>cap) push=cap;
+      // cap
+      g._spin360Vel = clamp(g._spin360Vel, -spin360MaxVel, spin360MaxVel);
 
-      tx += nx*push;
-      ty += ny*push;
+      // apply rotation angle onto picked axis
+      const ang = g._spin360Angle;
 
-    }else if(hoverMode==="spin"){
-      // continuous spin on hover (upgraded controls)
-      let ax = String(params.hoverSpinAxis || "z").toLowerCase();
-      if(params.hoverSpinRandomAxis) ax = (g._rndAxisPick || "z");
+      if (pickAxis === "x") rx += ang;
+      else if (pickAxis === "y") ry += ang;
+      else rz += ang;
 
-      const dir = params.hoverSpinRandomDir ? (hash01((g.overlayIndex||0)+777) < 0.5 ? -1 : 1) : 1;
-      const sspin = spinRad * f * dir;
-
-      if(ax === "x") rx += sspin;
-      else if(ax === "y") ry += sspin;
-      else rz += sspin;
-
-      const s = 1 + (pulse*0.6)*f;
-      sx*=s; sy*=s;
-
-    }else if(hoverMode==="spin360"){
-      // one-shot 360 spin with inertia + speed-responsive impulse
-      const minTrig = clamp01(Number(params.hoverSpin360MinTrigger ?? 0.12));
-      const inertia = clamp(Number(params.hoverSpin360Inertia ?? 0.85), 0, 0.98);
-      const turns = Math.max(0.25, Number(params.hoverSpin360Turns ?? 1));
-      const boost = Math.max(0, Number(params.hoverSpin360Boost ?? 3.0));
-
-      const hot = f >= minTrig;
-      if(hot && !g.spin360PrevHot){
-        const speedFactor = clamp(_cursorSpeed / 18, 0.15, 2.5);
-        const impulse = (Math.PI * 2) * turns * speedFactor * boost * 0.02;
-
-        g.spin360Vel += impulse;
-        g.spin360Vel = Math.max(g.spin360Vel, (Math.PI * 2) * turns * 0.02);
-      }
-      g.spin360PrevHot = hot;
-
-      // integrate / damp
-      g.spin360Angle += g.spin360Vel;
-      g.spin360Vel *= inertia;
-
-      if(Math.abs(g.spin360Vel) < 0.0006){
-        g.spin360Vel = 0;
-        // gently settle angle back toward nearest 2π multiple (optional)
-        // g.spin360Angle = 0; // if you want snapping, enable this
-      }
-
-      let ax = String(params.hoverSpin360Axis || "z").toLowerCase();
-      if(ax === "random") ax = (g._rndAxisPick || "z");
-
-      if(ax === "x") rx += g.spin360Angle;
-      else if(ax === "y") ry += g.spin360Angle;
-      else rz += g.spin360Angle;
-
-      ty += lift*0.18*f;
-
-    }else if(hoverMode==="explode"){
-      tx += (g._rndX||0) * explodeAmt * f;
-      ty += (g._rndY||0) * explodeAmt * f;
-      rz += (g._rndX||0) * explodeTwist * f;
-      const s = 1 + (pulse*0.9)*f;
-      sx*=s; sy*=s;
-      ty += lift*0.25*f;
+      // small lift helps readability
+      ty += lift * 0.12 * f;
+    } else if (hoverMode === "explode") {
+      tx += (g._rndX || 0) * explodeAmt * f;
+      ty += (g._rndY || 0) * explodeAmt * f;
+      rz += (g._rndX || 0) * explodeTwist * f;
+      const s = 1 + (pulse * 0.9) * f;
+      sx *= s;
+      sy *= s;
+      ty += lift * 0.25 * f;
     }
 
-    if(sweepOn && sweepAmt>0.0001){
-      const nx=dx/d, ny=dy/d;
-      const tnx=-ny, tny=nx;
-      const blend=clamp(sweepBias,0,2);
-      const mx=lerp(tnx,nx,(blend-1));
-      const my=lerp(tny,ny,(blend-1));
-      tx += mx*sweepAmt*f;
-      ty += my*sweepAmt*f*sweepYMix;
+    // apply spin360 rotation even when hoverMode isn’t spin360
+    // (so inertia keeps running after you leave)
+    if (hoverMode !== "spin360") {
+      const ang = g._spin360Angle || 0;
+      const pickAxis =
+        spin360AxisBase === "random" ? g._spin360Axis : String(spin360AxisBase || "z").toLowerCase();
+
+      if (Math.abs(ang) > 1e-6) {
+        if (pickAxis === "x") rx += ang;
+        else if (pickAxis === "y") ry += ang;
+        else rz += ang;
+      }
     }
 
-    g.group.position.x=lerp(g.group.position.x,tx,chase);
-    g.group.position.y=lerp(g.group.position.y,ty,chase);
+    if (sweepOn && sweepAmt > 0.0001) {
+      const nx = dx / d,
+        ny = dy / d;
+      const tnx = -ny,
+        tny = nx;
+      const blend = clamp(sweepBias, 0, 2);
+      const mx = lerp(tnx, nx, blend - 1);
+      const my = lerp(tny, ny, blend - 1);
+      tx += mx * sweepAmt * f;
+      ty += my * sweepAmt * f * sweepYMix;
+    }
 
-    g.group.rotation.x=lerp(g.group.rotation.x,rx,chase);
-    g.group.rotation.y=lerp(g.group.rotation.y,ry,chase);
-    g.group.rotation.z=lerp(g.group.rotation.z,rz,chase);
+    g.group.position.x = lerp(g.group.position.x, tx, chase);
+    g.group.position.y = lerp(g.group.position.y, ty, chase);
 
-    g.group.scale.x=lerp(g.group.scale.x,sx,chase);
-    g.group.scale.y=lerp(g.group.scale.y,sy,chase);
-    g.group.scale.z=lerp(g.group.scale.z,sz,chase);
+    g.group.rotation.x = lerp(g.group.rotation.x, rx, chase);
+    g.group.rotation.y = lerp(g.group.rotation.y, ry, chase);
+    g.group.rotation.z = lerp(g.group.rotation.z, rz, chase);
+
+    g.group.scale.x = lerp(g.group.scale.x, sx, chase);
+    g.group.scale.y = lerp(g.group.scale.y, sy, chase);
+    g.group.scale.z = lerp(g.group.scale.z, sz, chase);
   }
 }
 window.updateHoverEffects = updateHoverEffects;
@@ -1853,40 +2097,38 @@ window.updateHoverEffects = updateHoverEffects;
 // ---------------------------
 // Idle wave + breathing
 // ---------------------------
-function applyIdleMotion(){
-  if(!glyphs.length) return;
-  const t=_fxTime;
+function applyIdleMotion() {
+  if (!glyphs.length) return;
+  const t = _fxTime;
 
-  const breathOn=!!params.breathOn;
-  const breathAmt=Math.max(0,Number(params.breathAmount||0));
-  const breathSpd=Math.max(0.0001,Number(params.breathSpeed||0.55));
-  const breathMul=breathOn?(1+breathAmt*Math.sin(t*(Math.PI*2)*breathSpd)):1;
+  const breathOn = !!params.breathOn;
+  const breathAmt = Math.max(0, Number(params.breathAmount || 0));
+  const breathSpd = Math.max(0.0001, Number(params.breathSpeed || 0.55));
+  const breathMul = breathOn ? 1 + breathAmt * Math.sin(t * (Math.PI * 2) * breathSpd) : 1;
 
-  const waveOn=!!params.waveOn;
-  const waveSpd=Math.max(0.0001,Number(params.waveSpeed||0.55));
-  const waveAmpY=Number(params.waveAmpY||0);
-  const waveRot=THREE.MathUtils.degToRad(Number(params.waveRotDeg||0));
-  const waveFreq=Number(params.waveFreq||0.08);
-  const waveBy=(params.waveBy==="line")?"line":"x";
+  const waveOn = !!params.waveOn;
+  const waveSpd = Math.max(0.0001, Number(params.waveSpeed || 0.55));
+  const waveAmpY = Number(params.waveAmpY || 0);
+  const waveRot = THREE.MathUtils.degToRad(Number(params.waveRotDeg || 0));
+  const waveFreq = Number(params.waveFreq || 0.08);
+  const waveBy = params.waveBy === "line" ? "line" : "x";
 
-  for(const g of glyphs){
-    g._breathMul=breathMul;
+  for (const g of glyphs) {
+    g._breathMul = breathMul;
     _updateDepth(g);
 
-    if(!g.inner) continue;
-    if(!waveOn){
-      g.inner.position.y=0;
-      g.inner.rotation.z=0;
+    if (!g.inner) continue;
+    if (!waveOn) {
+      g.inner.position.y = 0;
+      g.inner.rotation.z = 0;
       continue;
     }
 
-    const phaseBase=(waveBy==="line")
-      ? (g.lineIndex||0)*1.15
-      : (g.baseX||0)*waveFreq;
+    const phaseBase = waveBy === "line" ? (g.lineIndex || 0) * 1.15 : (g.baseX || 0) * waveFreq;
 
-    const w=Math.sin(phaseBase + t*(Math.PI*2)*waveSpd);
-    g.inner.position.y=waveAmpY*w;
-    g.inner.rotation.z=waveRot*w;
+    const w = Math.sin(phaseBase + t * (Math.PI * 2) * waveSpd);
+    g.inner.position.y = waveAmpY * w;
+    g.inner.rotation.z = waveRot * w;
   }
 
   _applyCharZOffsetsFromParams();
@@ -1895,7 +2137,7 @@ function applyIdleMotion(){
 // ---------------------------
 // Init + loop
 // ---------------------------
-function init(){
+function init() {
   applyLightingMode();
   resize();
   applyFontSelection();
@@ -1903,15 +2145,18 @@ function init(){
 init();
 
 addEventListener("resize", resize);
-renderer.domElement.style.touchAction="none";
+renderer.domElement.style.touchAction = "none";
 renderer.domElement.addEventListener("pointermove", onPointerMove);
 renderer.domElement.addEventListener("pointerenter", onPointerEnter);
 renderer.domElement.addEventListener("pointerleave", onPointerLeave);
 
-function loop(){
-  raf=requestAnimationFrame(loop);
+function loop() {
+  raf = requestAnimationFrame(loop);
   controls.update();
-  _fxTime=performance.now()*0.001;
+
+  _fxTime = performance.now() * 0.001;
+  _fxDt = clamp(_fxTime - _fxPrevTime, 1 / 240, 1 / 20);
+  _fxPrevTime = _fxTime;
 
   updateHoverEffects();
   applyIdleMotion();
@@ -1919,7 +2164,7 @@ function loop(){
   _applyGradientAnimation();
   _syncFXUniforms();
 
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 }
 loop();
 
@@ -1927,18 +2172,48 @@ loop();
 // Cleanup
 // ---------------------------
 window[TOOL_KEY].cleanup = () => {
-  try{ delete window.__WF_3DTYPE_CORE_LOADED__; }catch(e){}
-  try{ renderer.domElement.removeEventListener("pointermove",onPointerMove); }catch(e){}
-  try{ renderer.domElement.removeEventListener("pointerenter",onPointerEnter); }catch(e){}
-  try{ renderer.domElement.removeEventListener("pointerleave",onPointerLeave); }catch(e){}
-  try{ if(tl) tl.kill(); }catch(e){}
-  try{ cancelAnimationFrame(raf); }catch(e){}
-  try{ clearText(); }catch(e){}
-  try{ disposeIf(faceTex); disposeIf(sideTex); disposeIf(faceMat); disposeIf(sideMat); }catch(e){}
-  try{ disposeIf(_bgTex); }catch(e){}
-  try{ for(const m of _fxMats){ m.onBeforeCompile=null; } _fxMats.clear(); }catch(e){}
-  try{ renderer?.dispose?.(); }catch(e){}
-  try{ wrap.innerHTML=""; }catch(e){}
+  try {
+    delete window.__WF_3DTYPE_CORE_LOADED__;
+  } catch (e) {}
+  try {
+    renderer.domElement.removeEventListener("pointermove", onPointerMove);
+  } catch (e) {}
+  try {
+    renderer.domElement.removeEventListener("pointerenter", onPointerEnter);
+  } catch (e) {}
+  try {
+    renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
+  } catch (e) {}
+  try {
+    if (tl) tl.kill();
+  } catch (e) {}
+  try {
+    cancelAnimationFrame(raf);
+  } catch (e) {}
+  try {
+    clearText();
+  } catch (e) {}
+  try {
+    disposeIf(faceTex);
+    disposeIf(sideTex);
+    disposeIf(faceMat);
+    disposeIf(sideMat);
+  } catch (e) {}
+  try {
+    disposeIf(_bgTex);
+  } catch (e) {}
+  try {
+    for (const m of _fxMats) {
+      m.onBeforeCompile = null;
+    }
+    _fxMats.clear();
+  } catch (e) {}
+  try {
+    renderer?.dispose?.();
+  } catch (e) {}
+  try {
+    wrap.innerHTML = "";
+  } catch (e) {}
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };

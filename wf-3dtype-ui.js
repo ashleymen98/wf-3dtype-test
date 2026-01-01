@@ -2,7 +2,7 @@
 (function () {
   const TAG = "[3DType/UI]";
   const UI_VERSION =
-    "ui_v12_spin360Inertia + perLetterFace + bgNoChecker + faceCheckerWorldUV";
+    "ui_v13_spin360RaycastEnter360 + explodeAxis+shapeControls";
   console.log(TAG, UI_VERSION);
   window.__WF_3DTYPE_UI_VERSION__ = UI_VERSION;
 
@@ -128,8 +128,15 @@
 
       // Anim tuning
       ensureParam(params, "animSpinDeg", 360);
+
       ensureParam(params, "animExplodeAmount", 220);
-      ensureParam(params, "animExplodeTwistDeg", 45);
+      ensureParam(params, "animExplodeDiameterX", 1.0);
+      ensureParam(params, "animExplodeDiameterY", 1.0);
+      ensureParam(params, "animExplodeAngleOffset", 0);
+      ensureParam(params, "animExplodeZAmount", 0);
+      ensureParam(params, "animExplodeRotDeg", 55);
+      ensureParam(params, "animExplodeRotAxis", "z");
+      ensureParam(params, "animExplodeRandomDir", true);
 
       // Hover tuning
       ensureParam(params, "hoverSpinDeg", 120);
@@ -138,12 +145,16 @@
       ensureParam(params, "hoverSpinRandomAmount", false);
       ensureParam(params, "hoverSpinAmountJitter", 0.35);
 
-      // New spin360 inertia
+      // Hover Spin360 (NEW fixed mapping)
       ensureParam(params, "hoverSpin360Axis", "random");
       ensureParam(params, "hoverSpin360RandomDir", true);
-      ensureParam(params, "hoverSpin360Boost", 0.018);
-      ensureParam(params, "hoverSpin360MaxVel", 10.0);
-      ensureParam(params, "hoverSpin360Damping", 7.5);
+      ensureParam(params, "hoverSpin360BaseDur", 0.55);
+      ensureParam(params, "hoverSpin360SpeedScale", 0.0045);
+      ensureParam(params, "hoverSpin360MinDur", 0.12);
+      ensureParam(params, "hoverSpin360MaxDur", 0.9);
+      ensureParam(params, "hoverSpin360Ease", "power3.out");
+      ensureParam(params, "hoverSpin360MinHoverF", 0.2);
+      ensureParam(params, "hoverSpin360Lift", 0.12);
 
       const Pane = window.Tweakpane.Pane;
       const pane = new Pane({ container: root, title: "Controls" });
@@ -506,7 +517,6 @@
       // ---------------------------
       const fBg = tLook.addFolder({ title: "Background" });
 
-      // BG MODE: ONLY solid/gradient
       const bBgMode = fBg.addBinding(params, "bgMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient" } });
       const bBgSolid = fBg.addBinding(params, "bgSolid", { label: "solid", view: "color" });
 
@@ -541,15 +551,12 @@
       const fFill = tLook.addFolder({ title: "Fill" });
       const fFace = fFill.addFolder({ title: "Faces" });
 
-      // Face modes now include perLetter
       const bFaceMode = fFace.addBinding(params, "faceMode", { label: "mode", options: { Solid: "solid", Gradient: "gradient", Checker: "checker", "Per Letter": "perLetter" } });
 
-      // UV selector (hidden for checker + perLetter)
       const bFaceUV = fFace.addBinding(params, "faceUVSpace", { label: "UV", options: { Glyph: "glyph", World: "world" } });
 
       const bFaceSolid = fFace.addBinding(params, "faceSolid", { view: "color" });
 
-      // Gradient controls
       const bFaceGradA = fFace.addBinding(params, "faceGradA", { label: "A", view: "color" });
       const bFaceStopA = fFace.addBinding(params, "faceStopA", { label: "A stop", min: 0, max: 1, step: 0.01 });
       const bFaceGradB = fFace.addBinding(params, "faceGradB", { label: "B", view: "color" });
@@ -566,7 +573,6 @@
       fFaceChk.addBinding(params, "faceChkColorB", { label: "square B", view: "color" });
       fFaceChk.addBinding(params, "faceChkLineColor", { label: "line", view: "color" });
 
-      // Per-letter face color controls
       const fPerLetter = fFace.addFolder({ title: "Per-letter Colors" });
       let faceProxy = {};
       let faceBindings = [];
@@ -655,23 +661,15 @@
 
       function refreshFaceUI() {
         const m = params.faceMode;
-
-        // UV hidden for checker + perLetter (checker is forced world in core)
         bFaceUV.element.style.display = m === "gradient" ? "" : "none";
-
-        // Solid visible only in solid
         bFaceSolid.element.style.display = m === "solid" ? "" : "none";
 
-        // Gradient controls visible only in gradient
         const gradOn = m === "gradient";
         [bFaceGradA, bFaceStopA, bFaceGradB, bFaceStopB, bFaceGradC, bFaceStopC, bFaceDir].forEach((b) => {
           b.element.style.display = gradOn ? "" : "none";
         });
 
-        // Checker folder visible only in checker
         fFaceChk.element.style.display = m === "checker" ? "" : "none";
-
-        // Per-letter folder visible only in perLetter
         fPerLetter.element.style.display = m === "perLetter" ? "" : "none";
       }
       refreshFaceUI();
@@ -772,8 +770,16 @@
 
       const fPresetEx = tMotion.addFolder({ title: "Preset Tuning" });
       fPresetEx.addBinding(params, "animSpinDeg", { label: "spin deg", min: 0, max: 1440, step: 5 });
-      fPresetEx.addBinding(params, "animExplodeAmount", { label: "explode amt", min: 0, max: 800, step: 5 });
-      fPresetEx.addBinding(params, "animExplodeTwistDeg", { label: "explode twist", min: 0, max: 180, step: 1 });
+
+      const fExplode = fPresetEx.addFolder({ title: "Explode" });
+      fExplode.addBinding(params, "animExplodeAmount", { label: "distance", min: 0, max: 900, step: 5 });
+      fExplode.addBinding(params, "animExplodeDiameterX", { label: "diam X", min: 0.1, max: 3, step: 0.01 });
+      fExplode.addBinding(params, "animExplodeDiameterY", { label: "diam Y", min: 0.1, max: 3, step: 0.01 });
+      fExplode.addBinding(params, "animExplodeAngleOffset", { label: "angle", min: 0, max: 360, step: 1 });
+      fExplode.addBinding(params, "animExplodeZAmount", { label: "Z amt", min: -400, max: 400, step: 1 });
+      fExplode.addBinding(params, "animExplodeRotDeg", { label: "rot deg", min: 0, max: 720, step: 5 });
+      fExplode.addBinding(params, "animExplodeRotAxis", { label: "rot axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
+      fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
 
       fAnim.addButton({ title: "Play" }).on("click", () => {
         window.__tp_animPlaying = true;
@@ -807,7 +813,7 @@
           Pulse: "pulse",
           Repel: "repel",
           Spin: "spin",
-          "Spin360 (Inertia)": "spin360",
+          "Spin360 (Enter 360°)": "spin360",
           Explode: "explode",
           None: "none",
         },
@@ -829,9 +835,22 @@
       const fHover360 = tMotion.addFolder({ title: "Hover Spin360 (mode: Spin360)" });
       fHover360.addBinding(params, "hoverSpin360Axis", { label: "axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
       fHover360.addBinding(params, "hoverSpin360RandomDir", { label: "random dir" });
-      fHover360.addBinding(params, "hoverSpin360Boost", { label: "boost", min: 0, max: 0.08, step: 0.001 });
-      fHover360.addBinding(params, "hoverSpin360MaxVel", { label: "max vel", min: 0.5, max: 30, step: 0.5 });
-      fHover360.addBinding(params, "hoverSpin360Damping", { label: "damping", min: 1, max: 20, step: 0.5 });
+      fHover360.addBinding(params, "hoverSpin360BaseDur", { label: "base dur", min: 0.05, max: 2.0, step: 0.01 });
+      fHover360.addBinding(params, "hoverSpin360SpeedScale", { label: "speed scale", min: 0, max: 0.02, step: 0.0005 });
+      fHover360.addBinding(params, "hoverSpin360MinDur", { label: "min dur", min: 0.03, max: 1.5, step: 0.01 });
+      fHover360.addBinding(params, "hoverSpin360MaxDur", { label: "max dur", min: 0.05, max: 3.0, step: 0.01 });
+      fHover360.addBinding(params, "hoverSpin360Ease", {
+        label: "ease",
+        options: {
+          "power3.out": "power3.out",
+          "power2.out": "power2.out",
+          "expo.out": "expo.out",
+          "sine.out": "sine.out",
+          "back.out(1.4)": "back.out(1.4)",
+        },
+      });
+      fHover360.addBinding(params, "hoverSpin360MinHoverF", { label: "min hover", min: 0, max: 1, step: 0.01 });
+      fHover360.addBinding(params, "hoverSpin360Lift", { label: "lift %", min: 0, max: 0.6, step: 0.01 });
 
       fHover.addBinding(params, "proximityFalloff", { label: "falloff", options: { linear: "linear", quadratic: "quadratic", smooth: "smooth" } });
       fHover.addBinding(params, "cursorSmoothing", { label: "cursor smooth", min: 0, max: 0.98, step: 0.01 });
@@ -937,8 +956,16 @@
         "animAlsoDepth",
         "animAxis",
         "animSpinDeg",
+
+        // explode upgraded keys
         "animExplodeAmount",
-        "animExplodeTwistDeg",
+        "animExplodeDiameterX",
+        "animExplodeDiameterY",
+        "animExplodeAngleOffset",
+        "animExplodeZAmount",
+        "animExplodeRotDeg",
+        "animExplodeRotAxis",
+        "animExplodeRandomDir",
       ]);
 
       const HOVER_KEYS = new Set([
@@ -960,11 +987,17 @@
         "hoverSpinRandomDir",
         "hoverSpinRandomAmount",
         "hoverSpinAmountJitter",
+
+        // spin360 enter 360
         "hoverSpin360Axis",
         "hoverSpin360RandomDir",
-        "hoverSpin360Boost",
-        "hoverSpin360MaxVel",
-        "hoverSpin360Damping",
+        "hoverSpin360BaseDur",
+        "hoverSpin360SpeedScale",
+        "hoverSpin360MinDur",
+        "hoverSpin360MaxDur",
+        "hoverSpin360Ease",
+        "hoverSpin360MinHoverF",
+        "hoverSpin360Lift",
       ]);
 
       const GRAD_ANIM_KEYS = new Set(["faceGradAnimOn", "faceGradSpeed", "faceGradAngle", "sideGradAnimOn", "sideGradSpeed", "sideGradAngle"]);
@@ -977,7 +1010,6 @@
 
         if (k === "faceMode") {
           refreshFaceUI();
-          // if switching to perLetter, ensure controls exist
           setTimeout(() => {
             try {
               rebuildFaceColorControls();
@@ -1005,7 +1037,6 @@
         }
 
         if (HOVER_KEYS.has(k)) {
-          // hover runs every frame; no rebuild needed
           return;
         }
 

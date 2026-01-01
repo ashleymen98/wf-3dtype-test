@@ -1956,10 +1956,13 @@ function _spin360Trigger(g) {
   const maxDur = clamp(Number(params.hoverSpin360MaxDur ?? 0.9), 0.03, 4);
   const ease = params.hoverSpin360Ease || "power3.out";
 
-  // speed -> duration (faster cursor => shorter duration)
   const sp = clamp(_cursorSpeed, 0, 2000);
   const dur = clamp(baseDur / (1 + sp * spScale), minDur, maxDur);
 
+  // already spinning? let it finish
+  if (g._spin360Busy) return;
+
+  // choose axis (stable per glyph)
   let ax = String(params.hoverSpin360Axis || "z").toLowerCase();
   if (ax === "random") {
     if (!g._spin360Axis) g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true);
@@ -1970,43 +1973,48 @@ function _spin360Trigger(g) {
   const dir = stablePickSign(g.overlayIndex || 0, !!params.hoverSpin360RandomDir);
   const add = Math.PI * 2 * dir;
 
-  // animate additive value, not rotation directly (so it layers with preset animation & hover lerp)
-  const now = _fxTime || performance.now() * 0.001;
+  g._spin360Busy = true;
+  g._spin360Lock = true;      // <<< IMPORTANT: ignore raycast misses while true
+  g._spin360Dur = dur;        // used to improve rotation lerp while spinning
 
-if (g._spin360Busy) return; // don’t retrigger mid-spin
-if (g._spin360CooldownUntil && now < g._spin360CooldownUntil) return;
+  gsap.to(g, {
+    _spin360Add: g._spin360Add + add,
+    duration: dur,
+    ease,
+    overwrite: true,
+    onComplete: () => {
+      g._spin360Busy = false;
+      g._spin360Lock = false;
 
-g._spin360Busy = true;
-
-gsap.to(g, {
-  _spin360Add: g._spin360Add + add,
-  duration: dur,
-  ease,
-  overwrite: true,
-  onComplete: () => {
-    g._spin360Busy = false;
-    g._spin360CooldownUntil = ( _fxTime || performance.now()*0.001 ) + SPIN360_RETRIGGER_COOLDOWN;
-
-    if (Math.abs(g._spin360Add) > Math.PI * 50) {
-      g._spin360Add = g._spin360Add % (Math.PI * 2);
-    }
-  },
-});
-
+      // prevent runaway growth
+      if (Math.abs(g._spin360Add) > Math.PI * 50) {
+        g._spin360Add = g._spin360Add % (Math.PI * 2);
+      }
+    },
+  });
 }
-
 
 function _spin360Reset(g) {
   if (!gsap || !g) return;
-  if (!g._spin360Add) return;
+
+  // if a spin is in progress, kill it then reset cleanly
+  g._spin360Lock = false;
+  g._spin360Busy = false;
 
   gsap.to(g, {
     _spin360Add: 0,
     duration: 0.35,
     ease: "power3.out",
     overwrite: true,
+    onComplete: () => {
+      // fully re-arm for next hover-in
+      g._spin360Add = 0;
+      g._spin360Busy = false;
+      g._spin360Lock = false;
+    },
   });
 }
+
 
 
 function resetHoverTransforms() {
@@ -2137,7 +2145,13 @@ if (hoverMode === "spin360") {
   const idx = _raycastGlyphIndexUnderCursor();
   const allowed = _hoverStrength >= minHoverF;
 
-  if (allowed && idx >= 0) {
+  const cur = _hoveredGlyphIdx >= 0 ? glyphs[_hoveredGlyphIdx] : null;
+  const locked = !!(cur && cur._spin360Lock); // <<< if spinning, do NOT consider hover-out
+
+  if (locked) {
+    // keep it “hovered” until spin completes
+    _spin360MissFrames = 0;
+  } else if (allowed && idx >= 0) {
     _spin360MissFrames = 0;
 
     if (idx !== _hoveredGlyphIdx) {
@@ -2146,9 +2160,7 @@ if (hoverMode === "spin360") {
       _spin360Trigger(glyphs[idx]);
     }
   } else {
-    // don’t instantly reset; require consecutive misses
     _spin360MissFrames++;
-
     if (_spin360MissFrames >= SPIN360_MISS_FRAMES_BEFORE_RESET) {
       if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
       _hoveredGlyphIdx = -1;
@@ -2156,12 +2168,11 @@ if (hoverMode === "spin360") {
     }
   }
 } else {
-  // not in spin360 mode -> ensure state clears
   _spin360MissFrames = 0;
-
   if (_hoveredGlyphIdx >= 0) _spin360Reset(glyphs[_hoveredGlyphIdx]);
   _hoveredGlyphIdx = -1;
 }
+
 
 
   for (const g of glyphs) {
@@ -2285,9 +2296,12 @@ if (hoverMode === "spin360") {
     g.group.position.x = lerp(g.group.position.x, tx, chase);
     g.group.position.y = lerp(g.group.position.y, ty, chase);
 
-    g.group.rotation.x = lerp(g.group.rotation.x, rx, chase);
-    g.group.rotation.y = lerp(g.group.rotation.y, ry, chase);
-    g.group.rotation.z = lerp(g.group.rotation.z, rz, chase);
+    const chaseRot = (g._spin360Busy || g._spin360Lock) ? Math.max(chase, 0.65) : chase;
+
+g.group.rotation.x = lerp(g.group.rotation.x, rx, chaseRot);
+g.group.rotation.y = lerp(g.group.rotation.y, ry, chaseRot);
+g.group.rotation.z = lerp(g.group.rotation.z, rz, chaseRot);
+
 
     g.group.scale.x = lerp(g.group.scale.x, sx, chase);
     g.group.scale.y = lerp(g.group.scale.y, sy, chase);
@@ -2419,6 +2433,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

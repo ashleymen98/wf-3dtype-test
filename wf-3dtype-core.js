@@ -180,7 +180,7 @@ const params = (window.params ||= {
   animExplodeRandomDir: true, // random +/- direction for explode rotation
 
   // Hover
-  hoverMode: "lift", // lift | rotate | tilt | pulse | repel | spin | spin360 | explode | none
+  hoverMode: "lift", // lift | rotate | tilt | pulse | repel | spin |  | explode | none
   proximityLift: true,
   proximityRadiusWorld: 140,
   proximityLiftAmount: 60,
@@ -1976,6 +1976,20 @@ function _spin360Trigger(g) {
   });
 }
 
+
+function _spin360Reset(g) {
+  if (!gsap || !g) return;
+  if (!g._spin360Add) return;
+
+  gsap.to(g, {
+    _spin360Add: 0,
+    duration: 0.35,
+    ease: "power3.out",
+    overwrite: true,
+  });
+}
+
+
 function resetHoverTransforms() {
   const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
 
@@ -2101,18 +2115,33 @@ function updateHoverEffects() {
 
   // Spin360: trigger ONLY on actual mesh hover enter (raycast)
   if (hoverMode === "spin360") {
-    const idx = _raycastGlyphIndexUnderCursor();
-    const allowed = _hoverStrength >= minHoverF;
+  const idx = _raycastGlyphIndexUnderCursor();
+  const allowed = _hoverStrength >= minHoverF;
 
-    if (allowed && idx >= 0) {
-      if (idx !== _hoveredGlyphIdx) {
-        _hoveredGlyphIdx = idx;
-        _spin360Trigger(glyphs[idx]);
+  if (allowed && idx >= 0) {
+    if (idx !== _hoveredGlyphIdx) {
+      // reset previous hovered glyph
+      if (_hoveredGlyphIdx >= 0) {
+        _spin360Reset(glyphs[_hoveredGlyphIdx]);
       }
-    } else {
-      _hoveredGlyphIdx = -1;
+
+      _hoveredGlyphIdx = idx;
+      _spin360Trigger(glyphs[idx]);
     }
   } else {
+    // hover exited all glyphs
+    if (_hoveredGlyphIdx >= 0) {
+      _spin360Reset(glyphs[_hoveredGlyphIdx]);
+    }
+    _hoveredGlyphIdx = -1;
+  }
+} else {
+  // leaving spin360 mode entirely
+  if (_hoveredGlyphIdx >= 0) {
+    _spin360Reset(glyphs[_hoveredGlyphIdx]);
+  }
+  _hoveredGlyphIdx = -1;
+}else {
     _hoveredGlyphIdx = -1;
   }
 
@@ -2371,3 +2400,4 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+

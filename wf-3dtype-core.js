@@ -1821,7 +1821,8 @@ function stopAnimation() {
   }
   for (const g of glyphs) {
     g.depthF = 1;
-
+    g._tx = tx;
+    g._ty = ty;
     g.animOffsetX = 0;
     g.animOffsetY = 0;
     g.animOffsetZ = 0;
@@ -1840,6 +1841,7 @@ g.pivot.rotation.set(g.baseRotX||0, g.baseRotY||0, g.baseRotZ||0);
 
     _updateDepth(g);
   }
+  
   _applyCharZOffsetsFromParams();
 }
 window.stopAnimation = stopAnimation;
@@ -2368,21 +2370,30 @@ function _resolveCollisions2D(glyphs) {
 }
 
 function updateHoverEffects() {
-  if (!glyphs.length || (params.hoverMode || "none") === "none") {
-    resetHoverTransforms();
-    _hoverStrength = 0;
-    return;
+  if (!glyphs.length) return;
+
+ const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
+
+let canHover = !!params.proximityLift && pointerActive;
+if (canHover) {
+  if (getCursorLocalOnTextPlane(cursorLocalTarget)) {
+    const ms = clamp(Number(params.cursorSmoothing || 0.85), 0, 0.98);
+    const a = 1 - ms;
+    _cursorDelta.copy(cursorLocalTarget).sub(cursorLocal);
+    const maxStep = 40;
+    const len = _cursorDelta.length();
+    if (len > maxStep) _cursorDelta.multiplyScalar(maxStep / len);
+    cursorLocal.addScaledVector(_cursorDelta, a);
+  } else {
+    canHover = false;
   }
-  if (!params.proximityLift) {
-    resetHoverTransforms();
-    _hoverStrength = 0;
-    return;
-  }
-  if (!pointerActive) {
-    resetHoverTransforms();
-    _hoverStrength = 0;
-    return;
-  }
+}
+
+if (!canHover) {
+  _hoverStrength = 0;
+  // don’t return — we still want to compute targets + collisions
+}
+
 
   if (getCursorLocalOnTextPlane(cursorLocalTarget)) {
     const ms = clamp(Number(params.cursorSmoothing || 0.85), 0, 0.98);
@@ -2601,8 +2612,7 @@ if (hoverMode === "spin360") {
     }
 
     // store intended (pre-collision) targets
-g._tx = tx;
-g._ty = ty;
+
 
 
     const chaseRot = (g._spin360Busy || g._spin360Lock) ? Math.max(chase, 0.65) : chase;
@@ -2610,6 +2620,10 @@ g._ty = ty;
 g.pivot.rotation.x = lerp(g.pivot.rotation.x, rx, chaseRot);
 g.pivot.rotation.y = lerp(g.pivot.rotation.y, ry, chaseRot);
 g.pivot.rotation.z = lerp(g.pivot.rotation.z, rz, chaseRot);
+    // store intended (pre-collision) targets
+g._tx = tx;
+g._ty = ty;
+
     // Spin360 additive rotation — apply to CENTER pivot (rot), not baseline pivot
 const add = g._spin360Add || 0;
 
@@ -2643,6 +2657,15 @@ g.rot.rotation.z = lerp(g.rot.rotation.z, crz, chaseRot2);
     g.group.scale.y = lerp(g.group.scale.y, sy, chase);
     g.group.scale.z = lerp(g.group.scale.z, sz, chase);
   }
+  // --- Collisions: resolve overlaps using intended targets ---
+_resolveCollisions2D(glyphs);
+
+// --- Collisions: apply resolved targets to actual positions ---
+for (const g of glyphs) {
+  g.group.position.x = lerp(g.group.position.x, g._tx, chase);
+  g.group.position.y = lerp(g.group.position.y, g._ty, chase);
+}
+
 }
 window.updateHoverEffects = updateHoverEffects;
 
@@ -2675,15 +2698,6 @@ function applyIdleMotion() {
       g.inner.rotation.z = 0;
       continue;
     }
-
-    // Resolve overlaps (runs on stored g._tx/g._ty)
-_resolveCollisions2D(glyphs);
-for (const g of glyphs) {
-  const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
-  g.group.position.x = lerp(g.group.position.x, g._tx, chase);
-  g.group.position.y = lerp(g.group.position.y, g._ty, chase);
-}
-
 
     const phaseBase = waveBy === "line" ? (g.lineIndex || 0) * 1.15 : (g.baseX || 0) * waveFreq;
 
@@ -2778,4 +2792,5 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 

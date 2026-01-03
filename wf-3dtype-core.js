@@ -191,12 +191,6 @@ const params = (window.params ||= {
   hoverTiltDeg: 18,
   hoverPulse: 0.12,
 
-  // Hover spin (existing “spin” mode)
-  hoverSpinDeg: 120,
-  hoverSpinAxis: "z", // x|y|z|random
-  hoverSpinRandomDir: true,
-  hoverSpinRandomAmount: false,
-  hoverSpinAmountJitter: 0.35, // 0..1
 
   // Hover Spin360 (raycast + full 360 on enter + inertia via speed->duration)
   hoverSpin360Axis: "random", // x|y|z|random
@@ -281,12 +275,6 @@ function ensureParam(key, val) {
 ensureParam("hoverSpin360Boost", 0.018);
 ensureParam("hoverSpin360MaxVel", 10.0);
 ensureParam("hoverSpin360Damping", 7.5);
-
-// New defaults (spin)
-ensureParam("hoverSpinAxis", "z");
-ensureParam("hoverSpinRandomDir", true);
-ensureParam("hoverSpinRandomAmount", false);
-ensureParam("hoverSpinAmountJitter", 0.35);
 
 // Spin360 defaults
 ensureParam("hoverSpin360Axis", "random");
@@ -2199,12 +2187,6 @@ function updateHoverEffects() {
   const sweepBias = Number(params.sweepBias || 1);
   const sweepYMix = Number(params.sweepYMix || 0.25);
 
-  // Spin (simple)
-  const spinBaseRad = THREE.MathUtils.degToRad(Number(params.hoverSpinDeg ?? 120));
-  const spinAxisBase = String(params.hoverSpinAxis || "z").toLowerCase();
-  const spinRandDir = !!params.hoverSpinRandomDir;
-  const spinRandAmt = !!params.hoverSpinRandomAmount;
-  const spinJit = clamp01(Number(params.hoverSpinAmountJitter ?? 0.35));
 
   // Explode (hover)
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
@@ -2358,26 +2340,6 @@ if (hoverMode === "spin360") {
 
       tx += nx * push;
       ty += ny * push;
-    } else if (hoverMode === "spin") {
-      let ax = spinAxisBase;
-      if (ax === "random") ax = stablePickAxis(g.overlayIndex || 0, "random", true);
-
-      const dir = stablePickSign(g.overlayIndex || 0, spinRandDir);
-      let amt = spinBaseRad;
-
-      if (spinRandAmt) {
-        const j = g._spinJitter || 0;
-        amt = spinBaseRad * (1 + j * spinJit);
-      }
-
-      const sgnAmt = amt * dir;
-      if (ax === "x") rx += sgnAmt * f;
-      else if (ax === "y") ry += sgnAmt * f;
-      else rz += sgnAmt * f;
-
-      const s = 1 + (pulse * 0.6) * f;
-      sx *= s;
-      sy *= s;
     } else if (hoverMode === "spin360") {
       // In spin360 mode we still allow subtle lift + sweep for feel
       ty += lift * spin360Lift * f;
@@ -2573,6 +2535,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

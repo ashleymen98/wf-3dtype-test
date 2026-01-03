@@ -318,6 +318,10 @@ ensureParam("animExplodeDiameterX", 1.0);
 ensureParam("animExplodeDiameterY", 1.0);
 ensureParam("animExplodeDiameter", 1.0); // NEW master
 
+ensureParam("animExplodeZLift", 28);        // extra Z layering during explode (world units)
+ensureParam("animExplodeDepthShrink", 0.22); // 0..0.5 how much to thin extrusion at full explode
+
+
 ensureParam("animExplodeShape", "burst"); // NEW
 ensureParam("animExplodeRingAngle", 0); // NEW
 ensureParam("animExplodeNoise", 0.15); // NEW
@@ -1401,7 +1405,8 @@ entry.group.position.z =
   (entry.baseGroupZ ?? 0) +
   zoff +
   (entry.animOffsetZ || 0) +
-  (entry.crowdOffsetZ || 0);
+  (entry.explodeZLift || 0); // NEW
+
 }
 
 function _ensureCharZOffsets() {
@@ -1675,6 +1680,10 @@ baseRotZ: pivot.rotation.z,
         _expZ: ezj,      // stable z jitter
         _spinJitter: stableJitter(idx), // stable noise driver
 
+        explodeF: 0,
+        explodeZLift: 0, // additive channel
+
+
         // hover spin360 additive
         _spin360Axis: stablePickAxis(idx, params.hoverSpin360Axis, true),
         _spin360Add: 0,
@@ -1917,6 +1926,9 @@ function playAnimation() {
   const exAng = THREE.MathUtils.degToRad(Number(params.animExplodeAngleOffset ?? 0));
   const exZ = Number(params.animExplodeZAmount ?? 0);
   const exZSpread = Number(params.animExplodeZSpread ?? 0.0);
+  const exZLift = Number(params.animExplodeZLift ?? 28);                 // NEW: extra Z layering during explode
+const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); // NEW: thin extrusion during explode
+
 
   const exRotAxisBase = String(params.animExplodeRotAxis || "z").toLowerCase();
   const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
@@ -1949,6 +1961,9 @@ function playAnimation() {
 
         // Z seed
         const zSeed = (m._expZ || 0);
+        // NEW: stable Z layering during explode (reduces clipping)
+m.explodeZLift = zSeed * exZLift * p.ex;
+
 
         // Shape variants
         if (exShape === "ring") {
@@ -2015,8 +2030,16 @@ function playAnimation() {
         bsz = m.baseScaleZ || 1;
       m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
 
-      m.depthF = typeof p.f === "number" ? p.f : 1;
-      _updateDepth(m);
+      // NEW: expose explode factor (optional but useful)
+m.explodeF = p.ex || 0;
+
+// NEW: thin extrusion while exploding (reduces sidewall intersections)
+const baseF = (typeof p.f === "number" ? p.f : 1);
+const thinMul = 1 - exDepthShrink * m.explodeF;
+
+m.depthF = baseF * thinMul;
+_updateDepth(m);
+
 
       // position offset is handled by hover system; we store anim offsets and apply in hover update
     }
@@ -2902,3 +2925,4 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+

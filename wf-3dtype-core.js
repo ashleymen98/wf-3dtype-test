@@ -1217,17 +1217,21 @@ function buildGlyph(ch) {
 
   let geo = new THREE.ExtrudeGeometry(shapes, { depth: params.depth, bevelEnabled: false, steps: 1 });
   geo.translate(-left, 0, 0);
- geo.computeBoundingBox();
+geo.computeBoundingBox();
 const gbb = geo.boundingBox;
 
-// IMPORTANT:
-// - X pivots around glyph width center (nice rotations)
-// - Y pivots around baseline (y = 0) so punctuation stays "up top"
-// - Z pivots around extrusion center
-const center = {
+// Visual center (true glyph center)
+const centerVisual = {
   x: (gbb.min.x + gbb.max.x) * 0.5,
-  y: 0,
+  y: (gbb.min.y + gbb.max.y) * 0.5,
   z: (gbb.min.z + gbb.max.z) * 0.5,
+};
+
+// Baseline center (for correct typing alignment + punctuation)
+const centerBaseline = {
+  x: centerVisual.x,
+  y: 0,
+  z: centerVisual.z,
 };
 
 
@@ -1261,7 +1265,8 @@ const center = {
   stroke.computeLineDistances();
   stroke.isLineSegments2 = true;
 
-  return { width, mesh, stroke, center };
+  return { width, mesh, stroke, centerBaseline, centerVisual };
+
 }
 
 function applyExtrusionTransform(entry) {
@@ -1270,13 +1275,22 @@ function applyExtrusionTransform(entry) {
 
   // keep glyph centered around pivot in Z
   const cz = (entry._geoCenterZ ?? (d * 0.5));
-  entry.mesh.position.z = -cz * sZ;
+  const z = -cz * sZ;
+
+  // preserve original X/Y offsets (so punctuation stays placed correctly)
+  const mx = entry._meshBaseX ?? entry.mesh.position.x;
+  const my = entry._meshBaseY ?? entry.mesh.position.y;
+
+  entry.mesh.position.set(mx, my, z);
 
   if (entry.stroke) {
-    entry.stroke.position.z = entry.mesh.position.z;
+    const sx = entry._strokeBaseX ?? entry.stroke.position.x;
+    const sy = entry._strokeBaseY ?? entry.stroke.position.y;
+    entry.stroke.position.set(sx, sy, z);
     entry.stroke.scale.z = entry.mesh.scale.z;
   }
 }
+
 
 
 function _updateDepth(entry) {
@@ -1432,27 +1446,41 @@ function buildText() {
         continue;
       }
 
-      const { mesh, stroke, center } = e.glyph;
+const { mesh, stroke, centerBaseline, centerVisual } = e.glyph;
 
 const group = new THREE.Group();
 group.position.set(x, y, 0);
 
-// inner is used by idle wave (keeps your current behavior)
+// inner is used by idle wave
 const inner = new THREE.Group();
 group.add(inner);
 
-// pivot is the "true rotation anchor" (center of glyph)
+// pivotBaseline keeps text aligned to baseline (punctuation correct)
 const pivot = new THREE.Group();
 inner.add(pivot);
 
-// center the mesh/stroke around pivot origin
-mesh.position.set(-center.x, -center.y, -center.z);
-if (params.strokeWidth > 0) stroke.position.set(-center.x, -center.y, -center.z);
+// rotCenter is offset so its origin is the TRUE visual center of the glyph.
+// We'll apply Spin360 rotation to this group only.
+const rot = new THREE.Group();
+pivot.add(rot);
 
-pivot.add(mesh);
-if (params.strokeWidth > 0) pivot.add(stroke);
+// delta from baseline-center space to visual-center space
+rot.position.set(
+  centerVisual.x - centerBaseline.x,
+  centerVisual.y - centerBaseline.y,
+  centerVisual.z - centerBaseline.z
+);
+
+// Place mesh so its VISUAL center is at rot's origin.
+// Net result position relative to pivotBaseline is still -centerBaseline (so layout stays correct).
+mesh.position.set(-centerVisual.x, -centerVisual.y, -centerVisual.z);
+if (params.strokeWidth > 0) stroke.position.set(-centerVisual.x, -centerVisual.y, -centerVisual.z);
+
+rot.add(mesh);
+if (params.strokeWidth > 0) rot.add(stroke);
 
 textGroup.add(group);
+
 
 
       const idx = globalGlyphIndex;
@@ -1471,6 +1499,19 @@ textGroup.add(group);
       const ezj = stableJitter(idx + 2027);
 
       const entry = {
+
+        rot,
+
+_meshBaseX: -centerVisual.x,
+_meshBaseY: -centerVisual.y,
+_strokeBaseX: -centerVisual.x,
+_strokeBaseY: -centerVisual.y,
+
+_geoCenterZ: centerVisual.z, // use visual center for Z-centering
+baseRotCX: rot.rotation.x,
+baseRotCY: rot.rotation.y,
+baseRotCZ: rot.rotation.z,
+
         group,
         inner,
         mesh,
@@ -2362,17 +2403,7 @@ if (hoverMode === "spin360") {
       ty += lift * 0.25 * f;
     }
 
-    // Apply additive spin360 rotation ALWAYS
-    const add = g._spin360Add || 0;
-    if (add !== 0) {
-      let ax = spin360AxisBase;
-      if (ax === "random")
-        ax =
-          g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
-      if (ax === "x") rx += add;
-      else if (ax === "y") ry += add;
-      else rz += add;
-    }
+   
 
     if (sweepOn && sweepAmt > 0.0001) {
       const nx = dx / d,
@@ -2394,6 +2425,32 @@ if (hoverMode === "spin360") {
 g.pivot.rotation.x = lerp(g.pivot.rotation.x, rx, chaseRot);
 g.pivot.rotation.y = lerp(g.pivot.rotation.y, ry, chaseRot);
 g.pivot.rotation.z = lerp(g.pivot.rotation.z, rz, chaseRot);
+    // Spin360 additive rotation — apply to CENTER pivot (rot), not baseline pivot
+const add = g._spin360Add || 0;
+
+let crx = g.baseRotCX || 0;
+let cry = g.baseRotCY || 0;
+let crz = g.baseRotCZ || 0;
+
+if (add !== 0) {
+  let ax = spin360AxisBase;
+  if (ax === "random")
+    ax =
+      g._spin360Axis ||
+      (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
+
+  if (ax === "x") crx += add;
+  else if (ax === "y") cry += add;
+  else crz += add;
+}
+
+const chaseRot2 =
+  g._spin360Busy || g._spin360Lock ? Math.max(chase, 0.65) : chase;
+
+g.rot.rotation.x = lerp(g.rot.rotation.x, crx, chaseRot2);
+g.rot.rotation.y = lerp(g.rot.rotation.y, cry, chaseRot2);
+g.rot.rotation.z = lerp(g.rot.rotation.z, crz, chaseRot2);
+
 
 
 
@@ -2527,6 +2584,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

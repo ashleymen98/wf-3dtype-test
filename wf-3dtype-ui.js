@@ -115,6 +115,15 @@
       ensureParam(params, "faceSolid", "#ff0000");
 
       ensureParam(params, "faceLetterColors", []);
+      // Kerning defaults
+ensureParam(params, "kerningOn", true);
+ensureParam(params, "kerningStrength", 1.0);
+ensureParam(
+  params,
+  "kerningPairsText",
+  "AV:-18\nVA:-14\nTo:-10\nLY:-12\nLT:-10\nTa:-10\nYo:-10"
+);
+
 
       ensureParam(params, "faceChkScale", 42);
       ensureParam(params, "faceChkLineWidth", 3);
@@ -451,6 +460,46 @@
       fTypeControls.addBinding(params, "align", {
         options: { Center: "center", Left: "left", Right: "right" },
       });
+
+      // ---------------------------
+// Kerning
+// ---------------------------
+const fKerning = tType.addFolder({ title: "Kerning" });
+fKerning.addBinding(params, "kerningOn", { label: "enabled" });
+fKerning.addBinding(params, "kerningStrength", {
+  label: "strength",
+  min: 0,
+  max: 2,
+  step: 0.01,
+});
+
+const kernWrap = document.createElement("div");
+kernWrap.className = "tp-custom-kerning";
+kernWrap.innerHTML = `
+  <label style="display:block;margin:6px 0 4px;">Pairs (one per line)</label>
+  <textarea spellcheck="false" style="width:100%;min-height:120px;resize:vertical;"></textarea>
+  <div class="hint" style="opacity:.7;font-size:11px;margin-top:4px;">
+    Format: <code>LY:-12</code> (negative = tighter). Comments: <code>#</code> or <code>//</code>
+  </div>
+`;
+const kernTA = kernWrap.querySelector("textarea");
+kernTA.value = params.kerningPairsText || "";
+folderContent(fKerning).appendChild(kernWrap);
+
+const onKernInput = debounce(() => {
+  params.kerningPairsText = kernTA.value;
+  window.buildText();
+  try {
+    window.__rebuildZControls?.();
+  } catch (e) {}
+  try {
+    window.__rebuildFaceColorControls?.();
+  } catch (e) {}
+  if (window.__tp_animPlaying) window.playAnimation();
+}, 80);
+
+kernTA.addEventListener("input", onKernInput);
+
 
       // ---------------------------
       // Per-letter Z
@@ -1031,6 +1080,10 @@
         "edgeThreshold",
         "strokeFacesOnly",
         "lightingMode",
+        "kerningOn",
+        "kerningStrength",
+        "kerningPairsText",
+
       ]);
 
       const ANIM_KEYS = new Set([
@@ -1183,21 +1236,28 @@
 
       attachRescueToTabClicks();
 
-      window.__tp_ui_cleanup = () => {
-        try {
-          ta.removeEventListener("input", onTextInput);
-        } catch (e) {}
-        try {
-          window.removeEventListener("keydown", onKeyDown, true);
-        } catch (e) {}
-        try {
-          pane.dispose();
-        } catch (e) {}
-      };
-    }
+     window.__tp_ui_cleanup = () => {
+  try {
+    ta.removeEventListener("input", onTextInput);
+  } catch (e) {}
+
+  // ADD THIS
+  try {
+    kernTA.removeEventListener("input", onKernInput);
+  } catch (e) {}
+
+  try {
+    window.removeEventListener("keydown", onKeyDown, true);
+  } catch (e) {}
+  try {
+    pane.dispose();
+  } catch (e) {}
+};
+
 
     buildEverything();
   }
 })();
+
 
 

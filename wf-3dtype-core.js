@@ -83,6 +83,13 @@ const params = (window.params ||= {
   lineSpacing: 1.05,
   align: "center",
 
+    // Kerning (manual pairs)
+  kerningOn: true,
+  kerningStrength: 1.0,
+  kerningPairsText:
+    "AV:-18\nVA:-14\nTo:-10\nLY:-12\nLT:-10\nTa:-10\nYo:-10",
+
+
   // Background (ONLY solid/gradient now)
   bgMode: "solid", // solid | gradient
   bgSolid: "#111111",
@@ -304,6 +311,14 @@ ensureParam("animExplodeRotAxis", "z");
 ensureParam("animExplodeRandomDir", true);
 
 ensureParam("faceLetterColors", []);
+// Kerning defaults
+ensureParam("kerningOn", true);
+ensureParam("kerningStrength", 1.0);
+ensureParam(
+  "kerningPairsText",
+  "AV:-18\nVA:-14\nTo:-10\nLY:-12\nLT:-10\nTa:-10\nYo:-10"
+);
+
 
 window.params = params;
 
@@ -364,6 +379,61 @@ function stablePickSign(idx, enabled) {
 }
 function stableJitter(idx) {
   return hash01(idx + 1337) * 2 - 1; // -1..1
+}
+
+// ---------------------------
+// Advance width + Kerning
+// ---------------------------
+function _fontScale() {
+  const res = font?.data?.resolution || 1000;
+  return (Number(params.size) || 48) / res;
+}
+
+function getAdvanceWidth(ch, fallbackWidth) {
+  const g = font?.data?.glyphs?.[ch];
+  const ha = g?.ha;
+  if (typeof ha === "number" && isFinite(ha)) return ha * _fontScale();
+  return fallbackWidth;
+}
+
+function parseKerningPairs(text) {
+  const map = Object.create(null);
+  const lines = String(text || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#") && !l.startsWith("//"));
+
+  for (const line of lines) {
+    const m =
+      line.match(/^(.{2})\s*[:=,]\s*(-?\d+(\.\d+)?)$/) ||
+      line.match(/^(.{2})\s+(-?\d+(\.\d+)?)$/);
+    if (!m) continue;
+    const pair = m[1];
+    const val = Number(m[2]);
+    if (!isFinite(val)) continue;
+    map[pair] = val;
+  }
+  return map;
+}
+
+let _kernMap = null;
+let _kernSrc = null;
+
+function getKern(prevCh, ch) {
+  if (!params.kerningOn) return 0;
+  const strength = Number(params.kerningStrength ?? 1);
+
+  const src = params.kerningPairsText || "";
+  if (_kernMap === null || src !== _kernSrc) {
+    _kernMap = parseKerningPairs(src);
+    _kernSrc = src;
+  }
+
+  const v = _kernMap[`${prevCh}${ch}`];
+  if (typeof v !== "number") return 0;
+
+  // Scale kerning to font size (values are in font units)
+  return v * strength * _fontScale();
 }
 
 // ---------------------------
@@ -1199,7 +1269,8 @@ function buildGlyph(ch) {
   const shapeGeo = new THREE.ShapeGeometry(shapes);
   shapeGeo.computeBoundingBox();
   const bb = shapeGeo.boundingBox;
-  const width = bb.max.x - bb.min.x;
+const widthBBox = bb.max.x - bb.min.x;
+const width = getAdvanceWidth(ch, widthBBox);
   const left = bb.min.x;
   shapeGeo.dispose();
 
@@ -1384,14 +1455,32 @@ function buildText() {
     const entries = [];
     let w = 0;
 
-    for (let i = 0; i < chars.length; i++) {
-      const ch = chars[i];
-      if (ch === " ") {
-        const sw = params.size * 0.35;
-        entries.push({ space: true, width: sw });
-        w += sw;
-        continue;
-      }
+   let prevCh = null;
+
+for (let i = 0; i < chars.length; i++) {
+  const ch = chars[i];
+
+  if (ch === " ") {
+    const sw = getAdvanceWidth(" ", params.size * 0.35);
+    entries.push({ space: true, width: sw });
+    w += sw;
+    prevCh = null; // break kerning across spaces
+    continue;
+  }
+
+  const kern = prevCh ? getKern(prevCh, ch) : 0;
+
+  const g = buildGlyph(ch);
+  entries.push({ space: false, width: g.width, kern, glyph: g });
+
+  w += kern;
+  w += g.width;
+
+  if (i !== chars.length - 1) w += params.charSpacing;
+
+  prevCh = ch;
+}
+
       const g = buildGlyph(ch);
       entries.push({ space: false, width: g.width, glyph: g });
       w += g.width;
@@ -1433,6 +1522,8 @@ function buildText() {
         x += e.width;
         continue;
       }
+        if (e.kern) x += e.kern; // apply pair kerning before placing glyph
+
 
 const { mesh, stroke, centerBaseline, centerVisual } = e.glyph;
 
@@ -2531,6 +2622,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

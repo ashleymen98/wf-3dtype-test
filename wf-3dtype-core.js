@@ -187,7 +187,7 @@ const params = (window.params ||= {
   animExplodeRandomDir: true, // random +/- direction for explode rotation
 
   // Hover
-  hoverMode: "lift", // lift | rotate | tilt | pulse | repel | spin |  | explode | none
+  hoverMode: "lift", // lift | rotate | tilt | pulse |  | spin |  | explode | none
   proximityLift: true,
   proximityRadiusWorld: 140,
   proximityLiftAmount: 60,
@@ -212,6 +212,15 @@ const params = (window.params ||= {
 
   hoverExplodeAmount: 120,
   hoverExplodeTwistDeg: 35,
+
+  // Collisions (2D repulsion on text plane)
+  collideOn: true,
+  collidePadding: 2.0,     // extra spacing between glyphs (world units)
+  collideStrength: 0.65,   // how strongly to separate per iteration
+  collideIters: 2,         // 1–4 typical
+  collideMaxShift: 28,     // max drift away from intended position (world units)
+  collideGrid: true,       // spatial hash accel
+
 
   // Repel
   repelAmount: 80,
@@ -277,6 +286,16 @@ const params = (window.params ||= {
 function ensureParam(key, val) {
   if (!(key in params)) params[key] = val;
 }
+
+
+// Collision defaults
+ensureParam("collideOn", true);
+ensureParam("collidePadding", 2.0);
+ensureParam("collideStrength", 0.65);
+ensureParam("collideIters", 2);
+ensureParam("collideMaxShift", 28);
+ensureParam("collideGrid", true);
+
 
 // Keep older keys safe if they existed in saved params (no longer used)
 ensureParam("hoverSpin360Boost", 0.018);
@@ -1279,6 +1298,12 @@ const width = getAdvanceWidth(ch, widthBBox);
 geo.computeBoundingBox();
 const gbb = geo.boundingBox;
 
+    // Approx collision radius (2D) from glyph bounds in local space
+  const gw = (gbb.max.x - gbb.min.x);
+  const gh = (gbb.max.y - gbb.min.y);
+  const radius = 0.5 * Math.max(gw, gh);
+
+
 // Visual center (true glyph center)
 const centerVisual = {
   x: (gbb.min.x + gbb.max.x) * 0.5,
@@ -1324,7 +1349,8 @@ const centerBaseline = {
   stroke.computeLineDistances();
   stroke.isLineSegments2 = true;
 
-  return { width, mesh, stroke, centerBaseline, centerVisual };
+   return { width, mesh, stroke, centerBaseline, centerVisual, radius };
+
 
 }
 
@@ -1519,7 +1545,8 @@ for (let i = 0; i < chars.length; i++) {
         if (e.kern) x += e.kern; // apply pair kerning before placing glyph
 
 
-const { mesh, stroke, centerBaseline, centerVisual } = e.glyph;
+const { mesh, stroke, centerBaseline, centerVisual, radius } = e.glyph;
+
 
 const group = new THREE.Group();
 group.position.set(x, y, 0);
@@ -1574,7 +1601,7 @@ textGroup.add(group);
       const entry = {
 
         rot,
-
+        radius,
 _meshBaseX: -centerVisual.x,
 _meshBaseY: -centerVisual.y,
 _strokeBaseX: -centerVisual.x,
@@ -2216,6 +2243,130 @@ g.pivot.rotation.z = lerp(g.pivot.rotation.z, brz, chase);
   }
 }
 
+function _clampLen(dx, dy, maxLen) {
+  const d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+  if (d <= maxLen) return { dx, dy };
+  const s = maxLen / d;
+  return { dx: dx * s, dy: dy * s };
+}
+
+function _resolveCollisions2D(glyphs) {
+  if (!params.collideOn) return;
+
+  const iters = Math.max(0, Math.floor(params.collideIters || 0));
+  if (!iters) return;
+
+  const pad = Math.max(0, Number(params.collidePadding ?? 0));
+  const strength = clamp(Number(params.collideStrength ?? 0.65), 0, 2);
+  const maxShift = Math.max(0, Number(params.collideMaxShift ?? 0));
+
+  // Build candidate positions from intended targets:
+  // g._cx, g._cy are the solver positions (start at intended target each frame)
+  for (const g of glyphs) {
+    g._cx = g._tx;
+    g._cy = g._ty;
+  }
+
+  // Spatial hash (optional but helps a ton if you have many glyphs)
+  const useGrid = !!params.collideGrid;
+
+  // Pick a reasonable cell size based on max radius
+  let maxR = 0;
+  for (const g of glyphs) maxR = Math.max(maxR, Number(g.radius || 0));
+  const cellSize = Math.max(8, (maxR + pad) * 2);
+
+  for (let iter = 0; iter < iters; iter++) {
+    let grid = null;
+
+    if (useGrid) {
+      grid = new Map();
+      for (let i = 0; i < glyphs.length; i++) {
+        const g = glyphs[i];
+        const cx = Math.floor(g._cx / cellSize);
+        const cy = Math.floor(g._cy / cellSize);
+        const key = cx + "," + cy;
+        let arr = grid.get(key);
+        if (!arr) grid.set(key, (arr = []));
+        arr.push(i);
+      }
+    }
+
+    for (let i = 0; i < glyphs.length; i++) {
+      const a = glyphs[i];
+      const ar = Math.max(0, Number(a.radius || 0)) + pad;
+
+      // Neighbor search
+      let candidates = null;
+
+      if (useGrid && grid) {
+        const gcx = Math.floor(a._cx / cellSize);
+        const gcy = Math.floor(a._cy / cellSize);
+        candidates = [];
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            const key = (gcx + ox) + "," + (gcy + oy);
+            const bucket = grid.get(key);
+            if (bucket) candidates.push(...bucket);
+          }
+        }
+      } else {
+        // brute force
+        candidates = null; // means j loop all
+      }
+
+      const loopList = candidates || null;
+
+      const jStart = 0;
+      const jEnd = loopList ? loopList.length : glyphs.length;
+
+      for (let jj = jStart; jj < jEnd; jj++) {
+        const j = loopList ? loopList[jj] : jj;
+        if (j <= i) continue; // each pair once
+
+        const b = glyphs[j];
+        const br = Math.max(0, Number(b.radius || 0)) + pad;
+
+        const dx = b._cx - a._cx;
+        const dy = b._cy - a._cy;
+
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+        const minD = ar + br;
+
+        if (dist >= minD) continue;
+
+        // Push apart (half each)
+        const overlap = (minD - dist);
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        const push = overlap * 0.5 * strength;
+
+        a._cx -= nx * push;
+        a._cy -= ny * push;
+        b._cx += nx * push;
+        b._cy += ny * push;
+      }
+    }
+
+    // Clamp drift from intended position (prevents “exploding layout”)
+    if (maxShift > 0) {
+      for (const g of glyphs) {
+        const dx = g._cx - g._tx;
+        const dy = g._cy - g._ty;
+        const c = _clampLen(dx, dy, maxShift);
+        g._cx = g._tx + c.dx;
+        g._cy = g._ty + c.dy;
+      }
+    }
+  }
+
+  // Output: overwrite intended targets with resolved ones
+  for (const g of glyphs) {
+    g._tx = g._cx;
+    g._ty = g._cy;
+  }
+}
+
 function updateHoverEffects() {
   if (!glyphs.length || (params.hoverMode || "none") === "none") {
     resetHoverTransforms();
@@ -2449,8 +2600,10 @@ if (hoverMode === "spin360") {
       ty += my * sweepAmt * f * sweepYMix;
     }
 
-    g.group.position.x = lerp(g.group.position.x, tx, chase);
-    g.group.position.y = lerp(g.group.position.y, ty, chase);
+    // store intended (pre-collision) targets
+g._tx = tx;
+g._ty = ty;
+
 
     const chaseRot = (g._spin360Busy || g._spin360Lock) ? Math.max(chase, 0.65) : chase;
 
@@ -2522,6 +2675,15 @@ function applyIdleMotion() {
       g.inner.rotation.z = 0;
       continue;
     }
+
+    // Resolve overlaps (runs on stored g._tx/g._ty)
+_resolveCollisions2D(glyphs);
+for (const g of glyphs) {
+  const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
+  g.group.position.x = lerp(g.group.position.x, g._tx, chase);
+  g.group.position.y = lerp(g.group.position.y, g._ty, chase);
+}
+
 
     const phaseBase = waveBy === "line" ? (g.lineIndex || 0) * 1.15 : (g.baseX || 0) * waveFreq;
 
@@ -2616,3 +2778,4 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+

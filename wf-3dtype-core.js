@@ -1923,10 +1923,6 @@ function playAnimation() {
     else vars.ry = rotRad;
     if (alsoDepth) vars.f = depthTarget;
     tl.to(proxies, vars, 0);
-  } else if (preset === "wobble") {
-    const vars = { ...tweenVars, rz: rotRad };
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
   } else if (preset === "inflate") {
     const vars = { ...tweenVars, s: 1 + inflateAmt };
     if (alsoDepth) vars.f = depthTarget;
@@ -2535,6 +2531,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

@@ -1481,12 +1481,6 @@ for (let i = 0; i < chars.length; i++) {
   prevCh = ch;
 }
 
-      const g = buildGlyph(ch);
-      entries.push({ space: false, width: g.width, glyph: g });
-      w += g.width;
-      if (i !== chars.length - 1) w += params.charSpacing;
-    }
-
     maxLineW = Math.max(maxLineW, w);
     built.push({ entries, width: w });
   }
@@ -2622,16 +2616,3 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
-
-
-
-
-
-
-
-
-
-
-
-
-

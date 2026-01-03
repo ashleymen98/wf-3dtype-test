@@ -1821,8 +1821,11 @@ function stopAnimation() {
   }
   for (const g of glyphs) {
     g.depthF = 1;
-    g._tx = tx;
-    g._ty = ty;
+   const bx = (g.baseGroupX || 0) + (g.animOffsetX || 0);
+const by = (g.baseGroupY || 0) + (g.animOffsetY || 0);
+g._tx = bx;
+g._ty = by;
+
     g.animOffsetX = 0;
     g.animOffsetY = 0;
     g.animOffsetZ = 0;
@@ -2395,19 +2398,7 @@ if (!canHover) {
 }
 
 
-  if (getCursorLocalOnTextPlane(cursorLocalTarget)) {
-    const ms = clamp(Number(params.cursorSmoothing || 0.85), 0, 0.98);
-    const a = 1 - ms;
-    _cursorDelta.copy(cursorLocalTarget).sub(cursorLocal);
-    const maxStep = 40;
-    const len = _cursorDelta.length();
-    if (len > maxStep) _cursorDelta.multiplyScalar(maxStep / len);
-    cursorLocal.addScaledVector(_cursorDelta, a);
-  } else {
-    resetHoverTransforms();
-    _hoverStrength = 0;
-    return;
-  }
+  
 
   // cursor speed (smoothed)
   const dist = cursorLocal.distanceTo(_prevCursorLocal);
@@ -2792,5 +2783,6 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 

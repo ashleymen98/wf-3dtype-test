@@ -146,13 +146,6 @@
       ensureParam(params, "animExplodeRingAngle", 0); // NEW
       ensureParam(params, "animExplodeNoise", 0.15); // NEW
 
-      // Hover tuning
-      ensureParam(params, "hoverSpinDeg", 120);
-      ensureParam(params, "hoverSpinAxis", "z");
-      ensureParam(params, "hoverSpinRandomDir", true);
-      ensureParam(params, "hoverSpinRandomAmount", false);
-      ensureParam(params, "hoverSpinAmountJitter", 0.35);
-
       // Hover Spin360 (NEW fixed mapping)
       ensureParam(params, "hoverSpin360Axis", "random");
       ensureParam(params, "hoverSpin360RandomDir", true);
@@ -912,7 +905,6 @@
           Tilt: "tilt",
           Pulse: "pulse",
           Repel: "repel",
-          Spin: "spin",
           "Spin360 (Enter 360°)": "spin360",
           Explode: "explode",
           None: "none",
@@ -924,13 +916,6 @@
       fHover.addBinding(params, "hoverRotateDeg", { label: "rotate", min: 0, max: 180, step: 1 });
       fHover.addBinding(params, "hoverTiltDeg", { label: "tilt", min: 0, max: 90, step: 1 });
       fHover.addBinding(params, "hoverPulse", { label: "pulse", min: 0, max: 0.8, step: 0.01 });
-
-      const fHoverSpin = tMotion.addFolder({ title: "Hover Spin (mode: Spin)" });
-      fHoverSpin.addBinding(params, "hoverSpinDeg", { label: "spin deg", min: 0, max: 720, step: 5 });
-      fHoverSpin.addBinding(params, "hoverSpinAxis", { label: "axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
-      fHoverSpin.addBinding(params, "hoverSpinRandomDir", { label: "random dir" });
-      fHoverSpin.addBinding(params, "hoverSpinRandomAmount", { label: "random amount" });
-      fHoverSpin.addBinding(params, "hoverSpinAmountJitter", { label: "amount jitter", min: 0, max: 1, step: 0.01 });
 
       const fHover360 = tMotion.addFolder({ title: "Hover Spin360 (mode: Spin360)" });
       fHover360.addBinding(params, "hoverSpin360Axis", { label: "axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
@@ -1095,12 +1080,7 @@
         "repelAmount",
         "repelMinDistance",
         "repelClamp",
-        "hoverSpinDeg",
-        "hoverSpinAxis",
-        "hoverSpinRandomDir",
-        "hoverSpinRandomAmount",
-        "hoverSpinAmountJitter",
-
+    
         // spin360 enter 360
         "hoverSpin360Axis",
         "hoverSpin360RandomDir",
@@ -1220,3 +1200,4 @@
     buildEverything();
   }
 })();
+

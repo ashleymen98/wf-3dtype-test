@@ -1234,29 +1234,30 @@ kernTA.addEventListener("input", onKernInput);
       rebuildZControls();
       rebuildFaceColorControls();
 
-      attachRescueToTabClicks();
+          attachRescueToTabClicks();
 
-     window.__tp_ui_cleanup = () => {
-  try {
-    ta.removeEventListener("input", onTextInput);
-  } catch (e) {}
+      window.__tp_ui_cleanup = () => {
+        try {
+          ta.removeEventListener("input", onTextInput);
+        } catch (e) {}
 
-  // ADD THIS
-  try {
-    kernTA.removeEventListener("input", onKernInput);
-  } catch (e) {}
+        try {
+          kernTA.removeEventListener("input", onKernInput);
+        } catch (e) {}
 
-  try {
-    window.removeEventListener("keydown", onKeyDown, true);
-  } catch (e) {}
-  try {
-    pane.dispose();
-  } catch (e) {}
-};
+        try {
+          window.removeEventListener("keydown", onKeyDown, true);
+        } catch (e) {}
 
+        try {
+          pane.dispose();
+        } catch (e) {}
+      };
+    } // end buildEverything
 
+    // build once on mount
     buildEverything();
-  }
+  } // end mountUI
 })();
 
 

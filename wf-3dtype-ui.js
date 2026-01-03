@@ -816,7 +816,6 @@
         options: {
           Depth: "depth",
           Twist: "twist",
-          Wobble: "wobble",
           Inflate: "inflate",
           Spin: "spin",
           Explode: "explode",
@@ -1200,4 +1199,5 @@
     buildEverything();
   }
 })();
+
 

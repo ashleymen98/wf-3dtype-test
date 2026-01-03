@@ -1217,13 +1217,19 @@ function buildGlyph(ch) {
 
   let geo = new THREE.ExtrudeGeometry(shapes, { depth: params.depth, bevelEnabled: false, steps: 1 });
   geo.translate(-left, 0, 0);
-  geo.computeBoundingBox();
+ geo.computeBoundingBox();
 const gbb = geo.boundingBox;
+
+// IMPORTANT:
+// - X pivots around glyph width center (nice rotations)
+// - Y pivots around baseline (y = 0) so punctuation stays "up top"
+// - Z pivots around extrusion center
 const center = {
   x: (gbb.min.x + gbb.max.x) * 0.5,
-  y: (gbb.min.y + gbb.max.y) * 0.5,
+  y: 0,
   z: (gbb.min.z + gbb.max.z) * 0.5,
 };
+
 
   if (geo.index) geo = geo.toNonIndexed();
   writeUVsNonIndexed_Local(geo, params.depth);
@@ -2521,6 +2527,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

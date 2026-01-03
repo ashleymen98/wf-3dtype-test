@@ -2406,10 +2406,10 @@ if (!canHover) {
   _cursorSpeed = lerp(_cursorSpeed, inst, 0.22);
   _prevCursorLocal.copy(cursorLocal);
 
-  const r = Math.max(1e-6, Number(params.proximityRadiusWorld || 140));
-  const invR = 1 / r;
-  const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
-  const mode = params.proximityFalloff || "smooth";
+const r = Math.max(1e-6, Number(params.proximityRadiusWorld || 140));
+const invR = 1 / r;
+const mode = params.proximityFalloff || "smooth";
+
   const lift = Number(params.proximityLiftAmount || 60);
   const rot = THREE.MathUtils.degToRad(Number(params.hoverRotateDeg || 20));
   const tilt = THREE.MathUtils.degToRad(Number(params.hoverTiltDeg || 18));
@@ -2783,6 +2783,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

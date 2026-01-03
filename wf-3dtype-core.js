@@ -1517,7 +1517,6 @@ baseRotCZ: rot.rotation.z,
         mesh,
         stroke,
         _spin360PendingReset: false,
-          _geoCenterZ: center.z, // store this
 
 
         baseDepth: params.depth,
@@ -2132,17 +2131,7 @@ function resetHoverTransforms() {
     let bry = (g.baseRotY || 0) + (g.animRotY || 0);
     let brz = (g.baseRotZ || 0) + (g.animRotZ || 0);
 
-    const add = g._spin360Add || 0;
-    let ax = spin360AxisBase;
-    if (ax === "random")
-      ax =
-        g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
-    if (add !== 0) {
-      if (ax === "x") brx += add;
-      else if (ax === "y") bry += add;
-      else brz += add;
-    }
-
+    
    g.pivot.rotation.x = lerp(g.pivot.rotation.x, brx, chase);
 g.pivot.rotation.y = lerp(g.pivot.rotation.y, bry, chase);
 g.pivot.rotation.z = lerp(g.pivot.rotation.z, brz, chase);
@@ -2584,6 +2573,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

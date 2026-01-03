@@ -289,7 +289,7 @@ function ensureParam(key, val) {
 
 
 // Collision defaults
-ensureParam("collideOn", true);
+ensureParam("collideOn", false);
 ensureParam("collidePadding", 2.0);
 ensureParam("collideStrength", 0.65);
 ensureParam("collideIters", 2);
@@ -328,6 +328,18 @@ ensureParam("animExplodeZAmount", 0);
 ensureParam("animExplodeRotDeg", 55);
 ensureParam("animExplodeRotAxis", "z");
 ensureParam("animExplodeRandomDir", true);
+
+
+// Option D (visual anti-clip) defaults
+ensureParam("crowdOn", true);
+ensureParam("crowdRadius", 42);        // world-ish units, try 32–64
+ensureParam("crowdZAmount", 18);       // max Z lift, try 10–28
+ensureParam("crowdZAlternate", true);  // alternate +/-
+ensureParam("crowdZSmooth", 0.18);     // smoothing
+ensureParam("crowdShrink", 0.06);      // 0..0.12 (6% default)
+ensureParam("crowdSideFade", 0.55);    // 0..1 (55% fade max)
+ensureParam("crowdLineOnly", true);    // keep it per-line (best for type)
+
 
 ensureParam("faceLetterColors", []);
 // Kerning defaults
@@ -1385,7 +1397,11 @@ function _updateDepth(entry) {
   entry.mesh.scale.z = Math.max(0.0001, (entry.depthF ?? 1) * breath);
   applyExtrusionTransform(entry);
 
-  entry.group.position.z = (entry.baseGroupZ ?? 0) + zoff + (entry.animOffsetZ || 0);
+entry.group.position.z =
+  (entry.baseGroupZ ?? 0) +
+  zoff +
+  (entry.animOffsetZ || 0) +
+  (entry.crowdOffsetZ || 0);
 }
 
 function _ensureCharZOffsets() {
@@ -1602,6 +1618,8 @@ textGroup.add(group);
 
         rot,
         radius,
+          crowdOffsetZ: 0,
+
 _meshBaseX: -centerVisual.x,
 _meshBaseY: -centerVisual.y,
 _strokeBaseX: -centerVisual.x,
@@ -2248,6 +2266,10 @@ g.pivot.rotation.z = lerp(g.pivot.rotation.z, brz, chase);
   }
 }
 
+
+  
+
+
 function _clampLen(dx, dy, maxLen) {
   const d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
   if (d <= maxLen) return { dx, dy };
@@ -2372,43 +2394,95 @@ function _resolveCollisions2D(glyphs) {
   }
 }
 
-function updateHoverEffects() {
-  if (!glyphs.length) return;
+// ---------------------------
+// Option D: crowd metric (NO XY movement)
+// ---------------------------
+function computeCrowdMetric() {
+  if (!params.crowdOn || !glyphs.length) return;
 
- const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
+  const crowdR = Math.max(1e-6, Number(params.crowdRadius || 42));
+  const invCrowdR = 1 / crowdR;
+  const lineOnly = !!params.crowdLineOnly;
 
-let canHover = !!params.proximityLift && pointerActive;
-if (canHover) {
-  if (getCursorLocalOnTextPlane(cursorLocalTarget)) {
-    const ms = clamp(Number(params.cursorSmoothing || 0.85), 0, 0.98);
-    const a = 1 - ms;
-    _cursorDelta.copy(cursorLocalTarget).sub(cursorLocal);
-    const maxStep = 40;
-    const len = _cursorDelta.length();
-    if (len > maxStep) _cursorDelta.multiplyScalar(maxStep / len);
-    cursorLocal.addScaledVector(_cursorDelta, a);
-  } else {
-    canHover = false;
+  // reset
+  for (const g of glyphs) g._crowd = 0;
+
+  // O(n^2) – fine for typical glyph counts
+  for (let i = 0; i < glyphs.length; i++) {
+    const a = glyphs[i];
+    const ax = a._tx ?? ((a.baseGroupX || 0) + (a.animOffsetX || 0));
+    const ay = a._ty ?? ((a.baseGroupY || 0) + (a.animOffsetY || 0));
+
+    for (let j = i + 1; j < glyphs.length; j++) {
+      const b = glyphs[j];
+      if (lineOnly && a.lineIndex !== b.lineIndex) continue;
+
+      const bx = b._tx ?? ((b.baseGroupX || 0) + (b.animOffsetX || 0));
+      const by = b._ty ?? ((b.baseGroupY || 0) + (b.animOffsetY || 0));
+
+      const dx = bx - ax;
+      const dy = by - ay;
+      const d = Math.sqrt(dx * dx + dy * dy);
+
+      if (d >= crowdR) continue;
+
+      const c = 1 - d * invCrowdR;
+      a._crowd += c;
+      b._crowd += c;
+    }
+  }
+
+  // normalize
+  for (const g of glyphs) {
+    g._crowd = clamp01((g._crowd || 0) * 0.65);
   }
 }
 
-if (!canHover) {
-  _hoverStrength = 0;
-  // don’t return — we still want to compute targets + collisions
-}
 
+function updateHoverEffects() {
+  if (!glyphs.length) return;
 
-  
+  const chase = clamp(Number(params.liftSmoothing || 0.18), 0.001, 1);
 
-  // cursor speed (smoothed)
+  // ---------------------------
+  // Cursor tracking / hover enable
+  // ---------------------------
+  let canHover = !!params.proximityLift && pointerActive;
+
+  if (canHover) {
+    if (getCursorLocalOnTextPlane(cursorLocalTarget)) {
+      const ms = clamp(Number(params.cursorSmoothing || 0.85), 0, 0.98);
+      const a = 1 - ms;
+
+      _cursorDelta.copy(cursorLocalTarget).sub(cursorLocal);
+
+      const maxStep = 40;
+      const len = _cursorDelta.length();
+      if (len > maxStep) _cursorDelta.multiplyScalar(maxStep / len);
+
+      cursorLocal.addScaledVector(_cursorDelta, a);
+    } else {
+      canHover = false;
+    }
+  }
+
+  if (!canHover) {
+    _hoverStrength = 0;
+    // don't return — we still want to settle transforms back
+  }
+
+  // cursor speed (smoothed units/sec)
   const dist = cursorLocal.distanceTo(_prevCursorLocal);
   const inst = dist / Math.max(1e-6, _fxDt);
   _cursorSpeed = lerp(_cursorSpeed, inst, 0.22);
   _prevCursorLocal.copy(cursorLocal);
 
-const r = Math.max(1e-6, Number(params.proximityRadiusWorld || 140));
-const invR = 1 / r;
-const mode = params.proximityFalloff || "smooth";
+  // ---------------------------
+  // Shared params
+  // ---------------------------
+  const r = Math.max(1e-6, Number(params.proximityRadiusWorld || 140));
+  const invR = 1 / r;
+  const mode = params.proximityFalloff || "smooth";
 
   const lift = Number(params.proximityLiftAmount || 60);
   const rot = THREE.MathUtils.degToRad(Number(params.hoverRotateDeg || 20));
@@ -2421,99 +2495,86 @@ const mode = params.proximityFalloff || "smooth";
   const sweepBias = Number(params.sweepBias || 1);
   const sweepYMix = Number(params.sweepYMix || 0.25);
 
-
   // Explode (hover)
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
 
-  // Spin360 (fixed)
+  // Spin360
   const spin360AxisBase = String(params.hoverSpin360Axis || "random").toLowerCase();
   const minHoverF = clamp01(Number(params.hoverSpin360MinHoverF ?? 0.2));
   const spin360Lift = clamp01(Number(params.hoverSpin360Lift ?? 0.12));
 
+  // ---------------------------
+  // Pass 0: compute hoverF + hover strength
+  // ---------------------------
   let maxF = 0;
-
   for (const g of glyphs) {
     const c = { x: g.baseX || 0, y: g.baseGroupY || 0 };
-    const dx = cursorLocal.x - c.x,
-      dy = cursorLocal.y - c.y;
+    const dx = cursorLocal.x - c.x;
+    const dy = cursorLocal.y - c.y;
     const d = Math.sqrt(dx * dx + dy * dy);
+
     const u = d < r ? 1 - d * invR : 0;
     g.hoverF = falloff(u, mode);
-    maxF = Math.max(maxF, g.hoverF);
+
+    if (g.hoverF > maxF) maxF = g.hoverF;
   }
   _hoverStrength = maxF;
 
-// Spin360: trigger ONLY on actual mesh hover enter (raycast)
-// Spin360: per-glyph enter, allow multiple simultaneous spins.
-// Rules:
-// - entering a glyph triggers its 360 (if not already spinning)
-// - leaving a glyph resets it to 0 (immediately if idle, or after spin completes if busy)
-// - moving to another glyph does NOT block; previous can keep spinning
-if (hoverMode === "spin360") {
-  const idx = _raycastGlyphIndexUnderCursor();
-  const allowed = _hoverStrength >= minHoverF;
+  // ---------------------------
+  // Spin360 enter/leave detection (raycast)
+  // ---------------------------
+  if (hoverMode === "spin360") {
+    const idx = _raycastGlyphIndexUnderCursor();
+    const allowed = _hoverStrength >= minHoverF;
 
-  if (allowed && idx >= 0) {
-    _spin360MissFrames = 0;
+    if (allowed && idx >= 0) {
+      _spin360MissFrames = 0;
 
-    // If we moved off a previous glyph, mark it as left
-    if (_spin360PrevIdx !== -1 && _spin360PrevIdx !== idx && _spin360PrevGlyph) {
-      const prev = _spin360PrevGlyph;
-      if (prev._spin360Busy || prev._spin360Lock) {
-        prev._spin360PendingReset = true; // reset after it finishes
-      } else {
-        _spin360Reset(prev);
+      // moved off a previous glyph
+      if (_spin360PrevIdx !== -1 && _spin360PrevIdx !== idx && _spin360PrevGlyph) {
+        const prev = _spin360PrevGlyph;
+        if (prev._spin360Busy || prev._spin360Lock) prev._spin360PendingReset = true;
+        else _spin360Reset(prev);
       }
-    }
 
-    // Entering a new glyph
-    if (idx !== _spin360PrevIdx) {
-      _spin360PrevIdx = idx;
-      _spin360PrevGlyph = glyphs[idx];
+      // entered a new glyph
+      if (idx !== _spin360PrevIdx) {
+        _spin360PrevIdx = idx;
+        _spin360PrevGlyph = glyphs[idx];
+        _spin360PrevGlyph._spin360PendingReset = false;
+        _spin360Trigger(_spin360PrevGlyph);
+      }
+    } else {
+      _spin360MissFrames++;
 
-      // if it had a pending reset but we re-entered quickly, cancel that reset
-      _spin360PrevGlyph._spin360PendingReset = false;
-
-      _spin360Trigger(_spin360PrevGlyph);
+      if (_spin360MissFrames >= SPIN360_MISS_FRAMES_BEFORE_RESET) {
+        if (_spin360PrevGlyph) {
+          const prev = _spin360PrevGlyph;
+          if (prev._spin360Busy || prev._spin360Lock) prev._spin360PendingReset = true;
+          else _spin360Reset(prev);
+        }
+        _spin360PrevIdx = -1;
+        _spin360PrevGlyph = null;
+        _spin360MissFrames = 0;
+      }
     }
   } else {
-    // Not currently on a glyph (or not allowed)
-    _spin360MissFrames++;
-
-    if (_spin360MissFrames >= SPIN360_MISS_FRAMES_BEFORE_RESET) {
-      if (_spin360PrevGlyph) {
-        const prev = _spin360PrevGlyph;
-        if (prev._spin360Busy || prev._spin360Lock) {
-          prev._spin360PendingReset = true;
-        } else {
-          _spin360Reset(prev);
-        }
-      }
-      _spin360PrevIdx = -1;
-      _spin360PrevGlyph = null;
-      _spin360MissFrames = 0;
+    // leaving spin360 mode
+    _spin360MissFrames = 0;
+    if (_spin360PrevGlyph) {
+      const prev = _spin360PrevGlyph;
+      if (prev._spin360Busy || prev._spin360Lock) prev._spin360PendingReset = true;
+      else _spin360Reset(prev);
     }
-  }
-} else {
-  // Leaving spin360 mode: reset any last hovered glyph
-  _spin360MissFrames = 0;
-
-  if (_spin360PrevGlyph) {
-    const prev = _spin360PrevGlyph;
-    if (prev._spin360Busy || prev._spin360Lock) {
-      prev._spin360PendingReset = true;
-    } else {
-      _spin360Reset(prev);
-    }
+    _spin360PrevIdx = -1;
+    _spin360PrevGlyph = null;
   }
 
-  _spin360PrevIdx = -1;
-  _spin360PrevGlyph = null;
-}
-
-
-
+  // ---------------------------
+  // PASS 1: compute intended targets + baseline pivot rotations/scales
+  // (DO NOT solve collisions here)
+  // ---------------------------
   for (const g of glyphs) {
     const f = g.hoverF || 0;
 
@@ -2529,21 +2590,17 @@ if (hoverMode === "spin360") {
     const bsz = g.baseScaleZ || 1;
 
     const c = { x: g.baseX || 0, y: g.baseGroupY || 0 };
-    const dx = cursorLocal.x - c.x,
-      dy = cursorLocal.y - c.y;
+    const dx = cursorLocal.x - c.x;
+    const dy = cursorLocal.y - c.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
 
-    let tx = bx,
-      ty = by;
-    let rx = brx,
-      ry = bry,
-      rz = brz;
-    let sx = bsx,
-      sy = bsy,
-      sz = bsz;
+    let tx = bx, ty = by;
+    let rx = brx, ry = bry, rz = brz;
+    let sx = bsx, sy = bsy, sz = bsz;
 
     if (hoverMode === "lift") {
       ty += lift * f;
+
     } else if (hoverMode === "rotate") {
       const ax = String(params.hoverRotateAxis || "z").toLowerCase();
       let pick = ax;
@@ -2551,15 +2608,17 @@ if (hoverMode === "spin360") {
       if (pick === "x") rx += rot * f;
       else if (pick === "y") ry += rot * f;
       else rz += rot * f;
+
     } else if (hoverMode === "tilt") {
-      const nx = dx / d,
-        ny = dy / d;
+      const nx = dx / d, ny = dy / d;
       rx += -ny * tilt * f;
       ry += nx * tilt * f;
+
     } else if (hoverMode === "pulse") {
       const s = 1 + pulse * f;
       sx *= s;
       sy *= s;
+
     } else if (hoverMode === "repel") {
       const minD = Math.max(0.001, Number(params.repelMinDistance ?? 6));
       const amt = Number(params.repelAmount ?? 80);
@@ -2574,91 +2633,151 @@ if (hoverMode === "spin360") {
 
       tx += nx * push;
       ty += ny * push;
+
     } else if (hoverMode === "spin360") {
-      // In spin360 mode we still allow subtle lift + sweep for feel
+      // still allow subtle lift for feel
       ty += lift * spin360Lift * f;
+
     } else if (hoverMode === "explode") {
-      // hover explode
       tx += (g._expX || 0) * explodeAmt * f;
       ty += (g._expY || 0) * explodeAmt * f;
       rz += (g._expX || 0) * explodeTwist * f;
+
       const s = 1 + (pulse * 0.9) * f;
-      sx *= s;
-      sy *= s;
+      sx *= s; sy *= s;
       ty += lift * 0.25 * f;
     }
 
-   
-
     if (sweepOn && sweepAmt > 0.0001) {
-      const nx = dx / d,
-        ny = dy / d;
-      const tnx = -ny,
-        tny = nx;
+      const nx = dx / d, ny = dy / d;
+      const tnx = -ny, tny = nx;
+
       const blend = clamp(sweepBias, 0, 2);
       const mx = lerp(tnx, nx, blend - 1);
       const my = lerp(tny, ny, blend - 1);
+
       tx += mx * sweepAmt * f;
       ty += my * sweepAmt * f * sweepYMix;
     }
 
-    // store intended (pre-collision) targets
+    // store intended targets (for collision solver)
+    g._tx = tx;
+    g._ty = ty;
 
-
-
+    // baseline pivot rotations (smoothed; slightly stiffer while spinning)
     const chaseRot = (g._spin360Busy || g._spin360Lock) ? Math.max(chase, 0.65) : chase;
+    g.pivot.rotation.x = lerp(g.pivot.rotation.x, rx, chaseRot);
+    g.pivot.rotation.y = lerp(g.pivot.rotation.y, ry, chaseRot);
+    g.pivot.rotation.z = lerp(g.pivot.rotation.z, rz, chaseRot);
 
-g.pivot.rotation.x = lerp(g.pivot.rotation.x, rx, chaseRot);
-g.pivot.rotation.y = lerp(g.pivot.rotation.y, ry, chaseRot);
-g.pivot.rotation.z = lerp(g.pivot.rotation.z, rz, chaseRot);
-    // store intended (pre-collision) targets
-g._tx = tx;
-g._ty = ty;
-
-    // Spin360 additive rotation — apply to CENTER pivot (rot), not baseline pivot
-const add = g._spin360Add || 0;
-
-let crx = g.baseRotCX || 0;
-let cry = g.baseRotCY || 0;
-let crz = g.baseRotCZ || 0;
-
-if (add !== 0) {
-  let ax = spin360AxisBase;
-  if (ax === "random")
-    ax =
-      g._spin360Axis ||
-      (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
-
-  if (ax === "x") crx += add;
-  else if (ax === "y") cry += add;
-  else crz += add;
-}
-
-const chaseRot2 =
-  g._spin360Busy || g._spin360Lock ? Math.max(chase, 0.65) : chase;
-
-g.rot.rotation.x = lerp(g.rot.rotation.x, crx, chaseRot2);
-g.rot.rotation.y = lerp(g.rot.rotation.y, cry, chaseRot2);
-g.rot.rotation.z = lerp(g.rot.rotation.z, crz, chaseRot2);
-
-
-
-
+    // scale (safe to lerp here)
     g.group.scale.x = lerp(g.group.scale.x, sx, chase);
     g.group.scale.y = lerp(g.group.scale.y, sy, chase);
     g.group.scale.z = lerp(g.group.scale.z, sz, chase);
+
+    // compute spin360 center-rotation targets and store for later pass
+    const add = g._spin360Add || 0;
+
+    let crx = g.baseRotCX || 0;
+    let cry = g.baseRotCY || 0;
+    let crz = g.baseRotCZ || 0;
+
+    if (add !== 0) {
+      let ax = spin360AxisBase;
+      if (ax === "random") {
+        ax = g._spin360Axis || (g._spin360Axis = stablePickAxis(g.overlayIndex || 0, "random", true));
+      }
+      if (ax === "x") crx += add;
+      else if (ax === "y") cry += add;
+      else crz += add;
+    }
+
+    g._crx = crx;
+    g._cry = cry;
+    g._crz = crz;
   }
-  // --- Collisions: resolve overlaps using intended targets ---
-_resolveCollisions2D(glyphs);
 
-// --- Collisions: apply resolved targets to actual positions ---
-for (const g of glyphs) {
-  g.group.position.x = lerp(g.group.position.x, g._tx, chase);
-  g.group.position.y = lerp(g.group.position.y, g._ty, chase);
+  // ---------------------------
+  // PASS 2: collisions ONCE (now that everyone has _tx/_ty)
+  // ---------------------------
+  _resolveCollisions2D(glyphs);
+
+  // ---------------------------
+  // PASS 3: crowd metric ONCE (after collisions)
+  // ---------------------------
+  computeCrowdMetric();
+
+  // ---------------------------
+  // PASS 4: apply spin360 rotation + apply final positions
+  // ---------------------------
+  for (const g of glyphs) {
+    const chaseRot2 = (g._spin360Busy || g._spin360Lock) ? Math.max(chase, 0.65) : chase;
+
+    g.rot.rotation.x = lerp(g.rot.rotation.x, g._crx || 0, chaseRot2);
+    g.rot.rotation.y = lerp(g.rot.rotation.y, g._cry || 0, chaseRot2);
+    g.rot.rotation.z = lerp(g.rot.rotation.z, g._crz || 0, chaseRot2);
+
+    g.group.position.x = lerp(g.group.position.x, g._tx || 0, chase);
+    g.group.position.y = lerp(g.group.position.y, g._ty || 0, chase);
+  }
+
+  // ---------------------------
+  // PASS 5: Option D crowd visual cheats (Z + shrink + side fade)
+  // ---------------------------
+  if (params.crowdOn) {
+    const zAmt = Number(params.crowdZAmount || 18);
+    const alt = !!params.crowdZAlternate;
+    const sm = clamp(Number(params.crowdZSmooth || 0.18), 0.001, 1);
+
+    const shrinkAmt = clamp01(Number(params.crowdShrink || 0.06));
+    const sideFadeAmt = clamp01(Number(params.crowdSideFade || 0.55));
+
+    for (const g of glyphs) {
+      const crowdF = clamp01(g._crowd || 0);
+
+      // Z layering
+      if (crowdF > 0.0001) {
+        const sgn = alt ? stablePickSign(g.overlayIndex || 0, true) : 1;
+        const targetZ = sgn * zAmt * crowdF;
+g.crowdOffsetZ = lerp(g.crowdOffsetZ || 0, targetZ, sm);
+        _updateDepth(g);
+      } else {
+g.crowdOffsetZ = lerp(g.crowdOffsetZ || 0, 0, sm);
+        _updateDepth(g);
+      }
+
+      // micro-shrink (non-compounding feel; still subtle)
+      if (shrinkAmt > 0.0001) {
+        const s = 1 - shrinkAmt * crowdF;
+        g.group.scale.x = lerp(g.group.scale.x, g.group.scale.x * s, 0.35);
+        g.group.scale.y = lerp(g.group.scale.y, g.group.scale.y * s, 0.35);
+      }
+
+      // fade sidewalls
+      if (g.mesh?.material && Array.isArray(g.mesh.material)) {
+        const side = g.mesh.material[1];
+        if (side) {
+          side.transparent = true;
+          const targetOp = 1 - sideFadeAmt * crowdF;
+          side.opacity = lerp(side.opacity ?? 1, targetOp, 0.25);
+          side.needsUpdate = true;
+        }
+      }
+    }
+  } else {
+    // ensure side opacity returns if crowd is off
+    for (const g of glyphs) {
+      if (g.mesh?.material && Array.isArray(g.mesh.material)) {
+        const side = g.mesh.material[1];
+        if (side && side.opacity !== 1) {
+          side.opacity = lerp(side.opacity ?? 1, 1, 0.25);
+          side.needsUpdate = true;
+        }
+      }
+    }
+  }
 }
 
-}
-window.updateHoverEffects = updateHoverEffects;
 
 // ---------------------------
 // Idle wave + breathing
@@ -2783,7 +2902,3 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
-
-
-
-

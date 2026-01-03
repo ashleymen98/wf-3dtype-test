@@ -856,6 +856,19 @@ kernTA.addEventListener("input", onKernInput);
       fCam.addButton({ title: "Apply preset" }).on("click", () => window.applyCameraPreset());
       fCam.addButton({ title: "Reframe" }).on("click", () => window.reframeToText());
 
+
+ // ---------------------------
+      // physics
+      // ---------------------------
+
+      const fCollide = tMotion.addFolder({ title: "Collisions" });
+fCollide.addBinding(params, "collideOn", { label: "enabled" });
+fCollide.addBinding(params, "collidePadding", { label: "padding", min: 0, max: 30, step: 0.5 });
+fCollide.addBinding(params, "collideStrength", { label: "strength", min: 0, max: 2, step: 0.01 });
+fCollide.addBinding(params, "collideIters", { label: "iters", min: 0, max: 6, step: 1 });
+fCollide.addBinding(params, "collideMaxShift", { label: "max shift", min: 0, max: 200, step: 1 });
+fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
+
       // ---------------------------
       // Motion
       // ---------------------------
@@ -1259,6 +1272,7 @@ kernTA.addEventListener("input", onKernInput);
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

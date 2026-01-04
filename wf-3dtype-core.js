@@ -1978,13 +1978,20 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
   // Blast params (safe defaults)
   // ---------------------------
   
-  function applyProxy(p) {
+ function applyProxy(p) {
   const isBlast = !!p._blast;
 
   for (const m of p.members) {
     let ox = 0, oy = 0, oz = 0;
     let arx = 0, ary = 0, arz = 0;
     let asc = 1;
+
+    // Ensure per-glyph stable seeds exist (no per-frame randomness)
+    // _spinJitter already exists in your entry; add a stable Z rand for blast if missing.
+    if (m._blastZRand == null) {
+      // stable -1..1 based on glyph index (overlayIndex) + constant salt
+      m._blastZRand = stableJitter((m.overlayIndex || 0) + 9001);
+    }
 
     // ---------------------------
     // Explode (existing logic)
@@ -2004,6 +2011,7 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
 
       // stable Z layering during explode (reduces clipping)
       m.explodeZLift = zSeed * exZLift * p.ex;
+      if (p.z0 == null) p.z0 = p.z || 0;
 
       if (exShape === "ring") {
         const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
@@ -2038,16 +2046,20 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
     }
 
     // ---------------------------
-    // Blast (radial + arc + swirl + jitter + punch + Z)
+    // Blast (radial + arc + swirl + jitter + punch + Z "bomb")
     // ---------------------------
     if (isBlast && p.bl && p.bl !== 0) {
+      // Origin is center (0,0). If later you want cursor-origin,
+      // replace Ox/Oy with cursor coords in LOCAL textGroup space.
       const Ox = 0, Oy = 0;
 
       const bx = (typeof m.baseGroupX === "number")
         ? m.baseGroupX
         : (typeof m.baseX === "number" ? m.baseX : 0);
 
-      const by = (typeof m.baseGroupY === "number") ? m.baseGroupY : 0;
+      const by = (typeof m.baseGroupY === "number")
+        ? m.baseGroupY
+        : (typeof m.baseY === "number" ? m.baseY : 0);
 
       const vx = bx - Ox;
       const vy = by - Oy;
@@ -2056,62 +2068,77 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
       // 1 at origin, 0 at radius+
       let t = clamp01(1 - dist / blastRadius);
 
-      // tighten falloff: higher animBlastFalloff = more concentrated near origin
+      // tighter falloff = more energy near origin
       {
         const k = 1 + 3 * blastFalloff; // 1..4
         t = Math.pow(t, k);
       }
 
-      const force = blastPower * p.bl * t;
+      const bl01 = clamp01(p.bl);
 
-      // radial
+      // shock peaks mid-way (blast wave feeling)
+      const shock = Math.sin(Math.PI * bl01);
+
+      // base force (keep blastPower separate from radius!)
+      const force = blastPower * bl01 * t;
+
+      // radial unit
       const nx = vx / dist;
       const ny = vy / dist;
 
-      // tangential
+      // tangential unit
       const tx = -ny;
       const ty = nx;
 
       // stable jitter seed (-1..1)
       const j = (m._spinJitter || 0);
 
-      // small angular jitter
+      // angular jitter on the radial direction
       const jAng = j * blastJit * 0.85;
       const cj = Math.cos(jAng), sj = Math.sin(jAng);
       const jrx = nx * cj - ny * sj;
       const jry = nx * sj + ny * cj;
 
+      // magnitude jitter
       const jf = 1 + j * blastJit * 0.35;
 
-      // mid-peaking arc
-      const arcF = Math.sin(Math.PI * clamp01(p.bl)) * blastArc;
-
-      // persistent swirl
+      // mid-peaking arc + persistent swirl
+      const arcF = shock * blastArc;
       const swirlF = blastTan * t;
 
+      // XY: radial impulse
       ox += jrx * force * jf;
       oy += jry * force * jf;
 
+      // XY: arc
       ox += tx * force * arcF * 0.55;
       oy += ty * force * arcF * 0.55;
 
+      // XY: swirl
       ox += tx * force * swirlF * 0.35;
       oy += ty * force * swirlF * 0.35;
 
-      // Z “push” during blast (uses your animBlastZAmount + animBlastZDir)
-      oz += blastZDir * (blastZAmount * blastPower) * p.bl * t;
+      // Z: "bomb" kick (peaks at shock), with stable per-glyph variance
+      const zVar = 1 + (m._blastZRand || 0) * 0.25; // 25% variance
+      const zKick = blastZDir * (blastZAmount * blastPower) * shock * t * zVar;
+      oz += zKick;
 
-      // Twist (stable sign)
+      // Twist (stable sign) - also uses shock so it feels like a hit
       if (blastRotRad) {
         const sgn = stablePickSign(m.overlayIndex || 0, true);
-        arz += blastRotRad * p.bl * t * sgn;
+        arz += blastRotRad * shock * t * sgn;
       }
 
-      // Punch scale
+      // Punch scale (impact feel)
       if (blastPunch) {
-        const punchF = Math.sin(Math.PI * clamp01(p.bl));
-        asc *= 1 + blastPunch * punchF * t;
+        asc *= 1 + blastPunch * shock * t;
       }
+
+      // Depth punch: stash it and apply AFTER depthF is computed below
+      // (prevents stomping explode depth shrink logic)
+      m._blastDepthKick = (blastPunch ? blastPunch * 0.85 : 0.18) * shock * t;
+    } else {
+      m._blastDepthKick = 0;
     }
 
     // ---------------------------
@@ -2147,11 +2174,18 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
     // depth thinning during explode
     const baseF = (typeof p.f === "number") ? p.f : 1;
     const thinMul = 1 - exDepthShrink * m.explodeF;
+
     m.depthF = baseF * thinMul;
+
+    // ✅ APPLY blast depth punch HERE (this is the crucial "easy to miss" bit)
+    if (m._blastDepthKick) {
+      m.depthF *= (1 + m._blastDepthKick);
+    }
 
     _updateDepth(m);
   }
 }
+
 
 
 
@@ -2680,6 +2714,12 @@ function updateHoverEffects() {
   // ---------------------------
 // Blast params (from UI)
 // ---------------------------
+const blastZMode = (params.animBlastZMode || "camera").toLowerCase(); // camera | world | none
+const blastZAmt = Number(params.animBlastZAmount ?? 220);
+const blastZInv = !!params.animBlastZInvert;
+const blastZSpread = Number(params.animBlastZSpread ?? 0.25);
+const blastDepthPunch = Number(params.animBlastDepthPunch ?? 0.35);
+const blastPower = 1.0;
 const blastOrigin = (params.animBlastOrigin || "center").toLowerCase();
 const blastRadius = Number(params.animBlastRadius ?? 260);
 const blastFalloff = Number(params.animBlastFalloff ?? 0.75);
@@ -3107,6 +3147,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

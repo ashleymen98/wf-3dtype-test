@@ -137,6 +137,14 @@ ensureParam(params, "animBlastEaseOut", "expo.out");
 ensureParam(params, "animBlastEaseIn", "power2.inOut");
 ensureParam(params, "animBlastReturn", true);
 
+      // Blast Z (NEW)
+ensureParam(params, "animBlastZMode", "camera"); // camera | world | none
+ensureParam(params, "animBlastZAmount", 220);    // world units
+ensureParam(params, "animBlastZInvert", false);  // inward vs outward
+ensureParam(params, "animBlastZSpread", 0.25);   // random variance
+ensureParam(params, "animBlastDepthPunch", 0.35); // extra extrusion punch (0..1-ish)
+
+
 
 
       ensureParam(params, "faceChkScale", 42);
@@ -996,6 +1004,16 @@ fBlast.addBinding(params, "animBlastEaseIn", {
   },
 });
 
+      fBlast.addBinding(params, "animBlastZMode", {
+  label: "Z mode",
+  options: { Camera: "camera", "World Z": "world", None: "none" },
+});
+fBlast.addBinding(params, "animBlastZAmount", { label: "Z amount", min: -900, max: 900, step: 5 });
+fBlast.addBinding(params, "animBlastZInvert", { label: "invert Z" });
+fBlast.addBinding(params, "animBlastZSpread", { label: "Z spread", min: 0, max: 2, step: 0.01 });
+fBlast.addBinding(params, "animBlastDepthPunch", { label: "depth punch", min: 0, max: 1.5, step: 0.01 });
+
+
 fBlast.addBinding(params, "animBlastReturn", { label: "return" });
 
 
@@ -1155,6 +1173,11 @@ fBlast.addBinding(params, "animBlastReturn", { label: "return" });
       ]);
 
       const ANIM_KEYS = new Set([
+        "animBlastZMode",
+        "animBlastZAmount",
+        "animBlastZInvert",
+        "animBlastZSpread",
+        "animBlastDepthPunch",
         "animPreset",
         "animSpeed",
         "animStagger",
@@ -1340,6 +1363,7 @@ fBlast.addBinding(params, "animBlastReturn", { label: "return" });
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

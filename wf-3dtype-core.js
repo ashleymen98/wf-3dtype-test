@@ -1935,7 +1935,6 @@ function playAnimation() {
 
   const blastPower = Number(params.animBlastRadius ?? 260) * 0.85; // or a dedicated param
 const blastZ = 0;                 // if you want Z push, set something like 0.08
-const blastRotRad = blastTwist;    // you already computed blastTwist in radians
 const blastScale = blastPunch;     // you already have blastPunch 0..0.4
 
 const blastOriginMode = String(params.animBlastOrigin || "center").toLowerCase();
@@ -1946,6 +1945,8 @@ const blastTan = clamp01(Number(params.animBlastTangential ?? 0.25));
 const blastJit = clamp01(Number(params.animBlastJitter ?? 0.18));
 const blastPunch = clamp01(Number(params.animBlastPunch ?? 0.12));
 const blastTwist = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
+  const blastRotRad = blastTwist;    // you already computed blastTwist in radians
+
 const blastEaseOut = params.animBlastEaseOut || "expo.out";
 const blastEaseIn  = params.animBlastEaseIn  || "power2.inOut";
 const blastReturn = !!params.animBlastReturn;
@@ -2236,6 +2237,7 @@ tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
   }
 
 }
+  }
 window.playAnimation = playAnimation;
 
 
@@ -3062,6 +3064,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

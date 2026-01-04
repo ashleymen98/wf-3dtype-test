@@ -125,6 +125,20 @@ ensureParam(
 );
 
 
+      ensureParam(params, "animBlastOrigin", "center");
+ensureParam(params, "animBlastRadius", 260);
+ensureParam(params, "animBlastFalloff", 0.75);
+ensureParam(params, "animBlastArc", 0.55);
+ensureParam(params, "animBlastTangential", 0.25);
+ensureParam(params, "animBlastJitter", 0.18);
+ensureParam(params, "animBlastPunch", 0.12);
+ensureParam(params, "animBlastTwistDeg", 110);
+ensureParam(params, "animBlastEaseOut", "expo.out");
+ensureParam(params, "animBlastEaseIn", "power2.inOut");
+ensureParam(params, "animBlastReturn", true);
+
+
+
       ensureParam(params, "faceChkScale", 42);
       ensureParam(params, "faceChkLineWidth", 3);
       ensureParam(params, "faceChkRotate", 0);
@@ -881,6 +895,8 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
           Inflate: "inflate",
           Spin: "spin",
           Explode: "explode",
+          Blast: "blast", // NEW
+
         },
       });
       fAnim.addBinding(params, "animSpeed", { label: "speed", min: 0.1, max: 4, step: 0.05 });
@@ -910,6 +926,7 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
 
       const fExplode = fPresetEx.addFolder({ title: "Explode" });
       fExplode.addBinding(params, "animExplodeAmount", { label: "distance", min: 0, max: 900, step: 5 });
+      
 
       // Existing ellipse controls
       fExplode.addBinding(params, "animExplodeDiameterX", { label: "diam X", min: 0.1, max: 3, step: 0.01 });
@@ -943,6 +960,23 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
         window.__tp_animPlaying = false;
         window.stopAnimation();
       });
+
+      const fBlast = fPresetEx.addFolder({ title: "Blast" });
+
+fBlast.addBinding(params, "animBlastOrigin", {
+  label: "origin",
+  options: { Center: "center", Cursor: "cursor" },
+});
+
+fBlast.addBinding(params, "animBlastRadius", { label: "radius", min: 40, max: 900, step: 5 });
+fBlast.addBinding(params, "animBlastFalloff", { label: "falloff", min: 0, max: 1, step: 0.01 });
+fBlast.addBinding(params, "animBlastArc", { label: "arc", min: 0, max: 1, step: 0.01 });
+fBlast.addBinding(params, "animBlastTangential", { label: "swirl", min: 0, max: 1, step: 0.01 });
+fBlast.addBinding(params, "animBlastJitter", { label: "jitter", min: 0, max: 1, step: 0.01 });
+fBlast.addBinding(params, "animBlastPunch", { label: "punch", min: 0, max: 0.4, step: 0.01 });
+fBlast.addBinding(params, "animBlastTwistDeg", { label: "twist", min: 0, max: 720, step: 5 });
+fBlast.addBinding(params, "animBlastReturn", { label: "return" });
+
 
       const fIdle = tMotion.addFolder({ title: "Idle Wave" });
       fIdle.addBinding(params, "waveOn", { label: "enabled" });
@@ -1115,6 +1149,19 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
         "animAxis",
         "animSpinDeg",
 
+        "animBlastOrigin",
+"animBlastRadius",
+"animBlastFalloff",
+"animBlastArc",
+"animBlastTangential",
+"animBlastJitter",
+"animBlastPunch",
+"animBlastTwistDeg",
+"animBlastEaseOut",
+"animBlastEaseIn",
+"animBlastReturn",
+
+
         // explode upgraded keys
         "animExplodeAmount",
         "animExplodeDiameterX",
@@ -1272,6 +1319,7 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

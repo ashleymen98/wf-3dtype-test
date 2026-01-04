@@ -1917,7 +1917,6 @@ function playAnimation() {
   // Explode tuning (v14)
   // ------------------------------------------------------------
 
-    const = !!params.animExplodeImpactOn;
 
 const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back
 const exImplode = !!params.animExplodeImplode;
@@ -3050,6 +3049,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

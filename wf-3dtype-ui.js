@@ -975,6 +975,27 @@ fBlast.addBinding(params, "animBlastTangential", { label: "swirl", min: 0, max: 
 fBlast.addBinding(params, "animBlastJitter", { label: "jitter", min: 0, max: 1, step: 0.01 });
 fBlast.addBinding(params, "animBlastPunch", { label: "punch", min: 0, max: 0.4, step: 0.01 });
 fBlast.addBinding(params, "animBlastTwistDeg", { label: "twist", min: 0, max: 720, step: 5 });
+      fBlast.addBinding(params, "animBlastEaseOut", {
+  label: "ease out",
+  options: {
+    "expo.out": "expo.out",
+    "power3.out": "power3.out",
+    "power2.out": "power2.out",
+    "sine.out": "sine.out",
+    "circ.out": "circ.out",
+  },
+});
+
+fBlast.addBinding(params, "animBlastEaseIn", {
+  label: "ease in",
+  options: {
+    "power2.inOut": "power2.inOut",
+    "sine.inOut": "sine.inOut",
+    "expo.inOut": "expo.inOut",
+    "circ.inOut": "circ.inOut",
+  },
+});
+
 fBlast.addBinding(params, "animBlastReturn", { label: "return" });
 
 
@@ -1319,6 +1340,7 @@ fBlast.addBinding(params, "animBlastReturn", { label: "return" });
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

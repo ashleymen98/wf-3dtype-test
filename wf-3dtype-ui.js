@@ -124,29 +124,6 @@ ensureParam(
   "AV:-18\nVA:-14\nTo:-10\nLY:-12\nLT:-10\nTa:-10\nYo:-10"
 );
 
-
-      ensureParam(params, "animBlastOrigin", "center");
-ensureParam(params, "animBlastRadius", 260);
-ensureParam(params, "animBlastFalloff", 0.75);
-ensureParam(params, "animBlastArc", 0.55);
-ensureParam(params, "animBlastTangential", 0.25);
-ensureParam(params, "animBlastJitter", 0.18);
-ensureParam(params, "animBlastPunch", 0.12);
-ensureParam(params, "animBlastTwistDeg", 110);
-ensureParam(params, "animBlastEaseOut", "expo.out");
-ensureParam(params, "animBlastEaseIn", "power2.inOut");
-ensureParam(params, "animBlastReturn", true);
-
-      // Blast Z (NEW)
-ensureParam(params, "animBlastZMode", "camera"); // camera | world | none
-ensureParam(params, "animBlastZAmount", 220);    // world units
-ensureParam(params, "animBlastZInvert", false);  // inward vs outward
-ensureParam(params, "animBlastZSpread", 0.25);   // random variance
-ensureParam(params, "animBlastDepthPunch", 0.35); // extra extrusion punch (0..1-ish)
-
-
-
-
       ensureParam(params, "faceChkScale", 42);
       ensureParam(params, "faceChkLineWidth", 3);
       ensureParam(params, "faceChkRotate", 0);
@@ -903,7 +880,6 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
           Inflate: "inflate",
           Spin: "spin",
           Explode: "explode",
-          Blast: "blast", // NEW
 
         },
       });
@@ -969,54 +945,7 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
         window.stopAnimation();
       });
 
-      const fBlast = fPresetEx.addFolder({ title: "Blast" });
-
-fBlast.addBinding(params, "animBlastOrigin", {
-  label: "origin",
-  options: { Center: "center", Cursor: "cursor" },
-});
-
-fBlast.addBinding(params, "animBlastRadius", { label: "radius", min: 40, max: 900, step: 5 });
-fBlast.addBinding(params, "animBlastFalloff", { label: "falloff", min: 0, max: 1, step: 0.01 });
-fBlast.addBinding(params, "animBlastArc", { label: "arc", min: 0, max: 1, step: 0.01 });
-fBlast.addBinding(params, "animBlastTangential", { label: "swirl", min: 0, max: 1, step: 0.01 });
-fBlast.addBinding(params, "animBlastJitter", { label: "jitter", min: 0, max: 1, step: 0.01 });
-fBlast.addBinding(params, "animBlastPunch", { label: "punch", min: 0, max: 0.4, step: 0.01 });
-fBlast.addBinding(params, "animBlastTwistDeg", { label: "twist", min: 0, max: 720, step: 5 });
-      fBlast.addBinding(params, "animBlastEaseOut", {
-  label: "ease out",
-  options: {
-    "expo.out": "expo.out",
-    "power3.out": "power3.out",
-    "power2.out": "power2.out",
-    "sine.out": "sine.out",
-    "circ.out": "circ.out",
-  },
-});
-
-fBlast.addBinding(params, "animBlastEaseIn", {
-  label: "ease in",
-  options: {
-    "power2.inOut": "power2.inOut",
-    "sine.inOut": "sine.inOut",
-    "expo.inOut": "expo.inOut",
-    "circ.inOut": "circ.inOut",
-  },
-});
-
-      fBlast.addBinding(params, "animBlastZMode", {
-  label: "Z mode",
-  options: { Camera: "camera", "World Z": "world", None: "none" },
-});
-fBlast.addBinding(params, "animBlastZAmount", { label: "Z amount", min: -900, max: 900, step: 5 });
-fBlast.addBinding(params, "animBlastZInvert", { label: "invert Z" });
-fBlast.addBinding(params, "animBlastZSpread", { label: "Z spread", min: 0, max: 2, step: 0.01 });
-fBlast.addBinding(params, "animBlastDepthPunch", { label: "depth punch", min: 0, max: 1.5, step: 0.01 });
-
-
-fBlast.addBinding(params, "animBlastReturn", { label: "return" });
-
-
+      
       const fIdle = tMotion.addFolder({ title: "Idle Wave" });
       fIdle.addBinding(params, "waveOn", { label: "enabled" });
       fIdle.addBinding(params, "waveBy", { label: "by", options: { X: "x", Line: "line" } });
@@ -1173,11 +1102,7 @@ fBlast.addBinding(params, "animBlastReturn", { label: "return" });
       ]);
 
       const ANIM_KEYS = new Set([
-        "animBlastZMode",
-        "animBlastZAmount",
-        "animBlastZInvert",
-        "animBlastZSpread",
-        "animBlastDepthPunch",
+        
         "animPreset",
         "animSpeed",
         "animStagger",
@@ -1192,19 +1117,6 @@ fBlast.addBinding(params, "animBlastReturn", { label: "return" });
         "animAlsoDepth",
         "animAxis",
         "animSpinDeg",
-
-        "animBlastOrigin",
-"animBlastRadius",
-"animBlastFalloff",
-"animBlastArc",
-"animBlastTangential",
-"animBlastJitter",
-"animBlastPunch",
-"animBlastTwistDeg",
-"animBlastEaseOut",
-"animBlastEaseIn",
-"animBlastReturn",
-
 
         // explode upgraded keys
         "animExplodeAmount",
@@ -1363,6 +1275,7 @@ fBlast.addBinding(params, "animBlastReturn", { label: "return" });
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

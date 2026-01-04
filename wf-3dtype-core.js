@@ -344,6 +344,20 @@ ensureParam("crowdShrink", 0.06);      // 0..0.12 (6% default)
 ensureParam("crowdSideFade", 0.55);    // 0..1 (55% fade max)
 ensureParam("crowdLineOnly", true);    // keep it per-line (best for type)
 
+// Blast (NEW preset) defaults
+ensureParam("animBlastOrigin", "center");  // center | cursor
+ensureParam("animBlastRadius", 260);       // how far from origin before falloff
+ensureParam("animBlastFalloff", 0.75);     // 0..1 (higher = stronger near origin)
+ensureParam("animBlastArc", 0.55);         // 0..1 arc amount
+ensureParam("animBlastTangential", 0.25);  // 0..1 swirl around origin
+ensureParam("animBlastJitter", 0.18);      // 0..1 adds irregularity
+ensureParam("animBlastPunch", 0.12);       // 0..0.4 quick scale punch
+ensureParam("animBlastTwistDeg", 110);     // extra spin during blast
+ensureParam("animBlastEaseOut", "expo.out");
+ensureParam("animBlastEaseIn", "power2.inOut");
+ensureParam("animBlastReturn", true);      // blast out then return
+
+
 
 ensureParam("faceLetterColors", []);
 // Kerning defaults
@@ -1405,7 +1419,9 @@ entry.group.position.z =
   (entry.baseGroupZ ?? 0) +
   zoff +
   (entry.animOffsetZ || 0) +
-  (entry.explodeZLift || 0); // NEW
+  (entry.explodeZLift || 0) +
+  (entry.crowdOffsetZ || 0);
+
 
 }
 
@@ -1904,6 +1920,8 @@ function playAnimation() {
       rz: 0,
       s: 1,
       ex: 0,
+        bl: 0,      
+  _blast: false, 
       members,
     }));
 
@@ -1911,6 +1929,26 @@ function playAnimation() {
   const inflateAmt = Number(params.animInflate || 0.18);
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
+
+  // Blast tuning
+
+  const blastPower = Number(params.animBlastRadius ?? 260) * 0.85; // or a dedicated param
+const blastZ = 0;                 // if you want Z push, set something like 0.08
+const blastRotRad = blastTwist;    // you already computed blastTwist in radians
+const blastScale = blastPunch;     // you already have blastPunch 0..0.4
+
+const blastOriginMode = String(params.animBlastOrigin || "center").toLowerCase();
+const blastRadius = Math.max(1e-6, Number(params.animBlastRadius ?? 260));
+const blastFalloff = clamp01(Number(params.animBlastFalloff ?? 0.75));
+const blastArc = clamp01(Number(params.animBlastArc ?? 0.55));
+const blastTan = clamp01(Number(params.animBlastTangential ?? 0.25));
+const blastJit = clamp01(Number(params.animBlastJitter ?? 0.18));
+const blastPunch = clamp01(Number(params.animBlastPunch ?? 0.12));
+const blastTwist = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
+const blastEaseOut = params.animBlastEaseOut || "expo.out";
+const blastEaseIn  = params.animBlastEaseIn  || "power2.inOut";
+const blastReturn = !!params.animBlastReturn;
+
 
   // Explode tuning (v14)
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
@@ -1934,7 +1972,22 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
   const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
   const exRandDir = !!params.animExplodeRandomDir;
 
+  function getBlastOriginLocal() {
+  // origin in *text-local* coords
+  if (blastOriginMode === "cursor" && pointerActive) {
+    // cursorLocal is already in text-local space
+    return { x: cursorLocal.x, y: cursorLocal.y };
+  }
+  return { x: 0, y: 0 }; // text is centered, so center origin works well
+}
+
+   // ---------------------------
+  // Blast params (safe defaults)
+  // ---------------------------
+  
   function applyProxy(p) {
+    const isBlast = !!p._blast;
+
     for (const m of p.members) {
       let ox = 0,
         oy = 0,
@@ -1944,6 +1997,9 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
         arz = 0;
       let asc = 1;
 
+      // ---------------------------
+      // Explode (your existing logic)
+      // ---------------------------
       if (p.ex && p.ex !== 0) {
         // Stable base angle + field rotation
         const a0 = (m._expU || 0) + exAng;
@@ -1960,10 +2016,10 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
         let sy = exDY * exD * n;
 
         // Z seed
-        const zSeed = (m._expZ || 0);
-        // NEW: stable Z layering during explode (reduces clipping)
-m.explodeZLift = zSeed * exZLift * p.ex;
+        const zSeed = m._expZ || 0;
 
+        // NEW: stable Z layering during explode (reduces clipping)
+        m.explodeZLift = zSeed * exZLift * p.ex;
 
         // Shape variants
         if (exShape === "ring") {
@@ -2006,6 +2062,48 @@ m.explodeZLift = zSeed * exZLift * p.ex;
         else arz += r;
       }
 
+      // ---------------------------
+      // NEW: Blast (radial push from origin)
+      // ---------------------------
+      if (isBlast && p.bl && p.bl !== 0) {
+        const O = getBlastOriginLocal();
+
+        // Try to use stable local base coords if present; otherwise fall back safely.
+        const bx =
+          (typeof m.baseX === "number" ? m.baseX : typeof m._baseX === "number" ? m._baseX : 0);
+        const by =
+          (typeof m.baseY === "number" ? m.baseY : typeof m._baseY === "number" ? m._baseY : 0);
+
+        const vx = bx - O.x;
+        const vy = by - O.y;
+        const dist = Math.hypot(vx, vy) + 1e-6;
+
+        // influence: 1 at origin, 0 at radius and beyond
+        let t = clamp01(1 - dist / blastRadius);
+
+        // falloff curve
+        if (blastFalloff === "smooth") t = t * t * (3 - 2 * t); // smoothstep
+        // else "linear" keeps t as-is
+
+        const force = blastPower * p.bl * t;
+
+        ox += (vx / dist) * force;
+        oy += (vy / dist) * force;
+        oz += blastZ * force;
+
+        if (blastRotRad) {
+          const sgn = stablePickSign(m.overlayIndex || 0, "random");
+          arz += blastRotRad * p.bl * t * sgn;
+        }
+
+        if (blastScale) {
+          asc *= 1 + blastScale * p.bl * t;
+        }
+      }
+
+      // ---------------------------
+      // Shared transforms
+      // ---------------------------
       arx += p.rx || 0;
       ary += p.ry || 0;
       arz += p.rz || 0;
@@ -2024,22 +2122,20 @@ m.explodeZLift = zSeed * exZLift * p.ex;
       m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
       m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
 
-
       const bsx = m.baseScaleX || 1,
         bsy = m.baseScaleY || 1,
         bsz = m.baseScaleZ || 1;
       m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
 
       // NEW: expose explode factor (optional but useful)
-m.explodeF = p.ex || 0;
+      m.explodeF = p.ex || 0;
 
-// NEW: thin extrusion while exploding (reduces sidewall intersections)
-const baseF = (typeof p.f === "number" ? p.f : 1);
-const thinMul = 1 - exDepthShrink * m.explodeF;
+      // NEW: thin extrusion while exploding (reduces sidewall intersections)
+      const baseF = typeof p.f === "number" ? p.f : 1;
+      const thinMul = 1 - exDepthShrink * m.explodeF;
 
-m.depthF = baseF * thinMul;
-_updateDepth(m);
-
+      m.depthF = baseF * thinMul;
+      _updateDepth(m);
 
       // position offset is handled by hover system; we store anim offsets and apply in hover update
     }
@@ -2061,13 +2157,22 @@ _updateDepth(m);
     },
   };
 
+  // preset flag for blast
+  const blastPresetActive = preset === "blast";
+
   for (const p of proxies) {
     p.f = alsoDepth ? minF : undefined;
     p.rx = 0;
     p.ry = 0;
     p.rz = 0;
     p.s = 1;
+
+    // explode
     p.ex = 0;
+
+    // NEW: blast
+    p.bl = 0;
+    p._blast = blastPresetActive;
   }
 
   const axis = (params.animAxis || "y").toLowerCase();
@@ -2096,11 +2201,42 @@ _updateDepth(m);
     const vars = { ...tweenVars, ex: 1 };
     if (alsoDepth) vars.f = depthTarget;
     tl.to(proxies, vars, 0);
-  } else {
-    tl.to(proxies, { ...tweenVars, f: depthTarget }, 0);
+ } else if (preset === "blast") {
+  // Mark proxies as blast mode so applyProxy uses blast logic
+  for (const p of proxies) p._blast = true;
+
+  // Blast feels better as OUT then (optionally) RETURN, not yoyo
+  tl = gsap.timeline({ repeat: loop ? -1 : 0 });
+
+  // OUT
+  tl.to(
+    proxies,
+    {
+      ...tweenVars,
+      ease: blastEaseOut,
+      bl: 1,
+      ...(alsoDepth ? { f: depthTarget } : {}),
+    },
+    0
+  );
+
+  if (blastReturn) {
+    // RETURN
+    tl.to(
+      proxies,
+      {
+        ...tweenVars,
+        ease: blastEaseIn,
+        bl: 0,
+        ...(alsoDepth ? { f: minF } : {}),
+      },
+      ">-0.05"
+    );
   }
+
 }
 window.playAnimation = playAnimation;
+
 
 // ---------------------------
 // Hover (Spin360 fixed: raycast enter + full 360)
@@ -2925,4 +3061,5 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 

@@ -1902,7 +1902,8 @@ function playAnimation() {
   const duration = Number(params.animSpeed || 1.2);
   const stagger = Number(params.animStagger || 0.03);
   const ease = params.animEase || "power2.inOut";
-  const loop = !!params.animLoop;
+  const shouldLoop = !!params.animLoop;
+
   const minF = Math.max(0, Number(params.animMinPct || 0) / 100);
   const maxF = Math.max(0, Number(params.animMaxPct || 100) / 100);
 
@@ -2143,7 +2144,7 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
 
   for (const p of proxies) applyProxy(p);
 
-  tl = gsap.timeline({ repeat: loop ? -1 : 0, yoyo: true });
+tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
   const preset = (params.animPreset || "depth").toLowerCase();
   const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
 
@@ -2206,7 +2207,7 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
   for (const p of proxies) p._blast = true;
 
   // Blast feels better as OUT then (optionally) RETURN, not yoyo
-  tl = gsap.timeline({ repeat: loop ? -1 : 0 });
+tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
   // OUT
   tl.to(
@@ -2994,8 +2995,8 @@ renderer.domElement.addEventListener("pointermove", onPointerMove);
 renderer.domElement.addEventListener("pointerenter", onPointerEnter);
 renderer.domElement.addEventListener("pointerleave", onPointerLeave);
 
-function loop() {
-  raf = requestAnimationFrame(loop);
+function renderLoop() {
+  raf = requestAnimationFrame(renderLoop);
   controls.update();
 
   _fxTime = performance.now() * 0.001;
@@ -3010,7 +3011,7 @@ function loop() {
 
   renderer.render(scene, camera);
 }
-loop();
+renderLoop();
 
 // ---------------------------
 // Cleanup
@@ -3061,5 +3062,6 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 

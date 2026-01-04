@@ -2719,7 +2719,6 @@ const blastZAmt = Number(params.animBlastZAmount ?? 220);
 const blastZInv = !!params.animBlastZInvert;
 const blastZSpread = Number(params.animBlastZSpread ?? 0.25);
 const blastDepthPunch = Number(params.animBlastDepthPunch ?? 0.35);
-const blastPower = 1.0;
 const blastOrigin = (params.animBlastOrigin || "center").toLowerCase();
 const blastRadius = Number(params.animBlastRadius ?? 260);
 const blastFalloff = Number(params.animBlastFalloff ?? 0.75);
@@ -3147,6 +3146,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

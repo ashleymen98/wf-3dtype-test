@@ -154,6 +154,19 @@ ensureParam(
       ensureParam(params, "animExplodeRingAngle", 0); // NEW
       ensureParam(params, "animExplodeNoise", 0.15); // NEW
 
+      // Impact-style explode (NEW)
+ensureParam(params, "animExplodeImpactOn", true);
+ensureParam(params, "animExplodeImpactDir", "front"); // front | back
+ensureParam(params, "animExplodeImplode", false);     // inward instead of outward
+ensureParam(params, "animExplodeImpactStrength", 1.0); // scales per-char impulse
+ensureParam(params, "animExplodeImpactRadius", 260);   // in layout/world-ish units
+ensureParam(params, "animExplodeImpactFalloff", 2.2);  // power curve
+ensureParam(params, "animExplodeImpactX", 0.0);        // -1..1 center offset
+ensureParam(params, "animExplodeImpactY", 0.0);        // -1..1 center offset
+ensureParam(params, "animExplodeImpactZPush", 160);    // Z shove amount
+ensureParam(params, "animExplodeImpactRadialBoost", 0.55); // extra XY boost near hit
+
+
       // Hover Spin360 (NEW fixed mapping)
       ensureParam(params, "hoverSpin360Axis", "random");
       ensureParam(params, "hoverSpin360RandomDir", true);
@@ -936,6 +949,57 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
       fExplode.addBinding(params, "animExplodeRotAxis", { label: "rot axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
       fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
 
+      // NEW: impact controls
+fExplode.addBinding(params, "animExplodeImpactOn", { label: "impact on" });
+fExplode.addBinding(params, "animExplodeImpactDir", {
+  label: "hit dir",
+  options: { Front: "front", Back: "back" },
+});
+fExplode.addBinding(params, "animExplodeImplode", { label: "implode" });
+fExplode.addBinding(params, "animExplodeImpactStrength", {
+  label: "impact str",
+  min: 0,
+  max: 3,
+  step: 0.01,
+});
+fExplode.addBinding(params, "animExplodeImpactRadius", {
+  label: "impact radius",
+  min: 40,
+  max: 900,
+  step: 5,
+});
+fExplode.addBinding(params, "animExplodeImpactFalloff", {
+  label: "falloff",
+  min: 0.5,
+  max: 6,
+  step: 0.05,
+});
+fExplode.addBinding(params, "animExplodeImpactX", {
+  label: "impact X",
+  min: -1,
+  max: 1,
+  step: 0.01,
+});
+fExplode.addBinding(params, "animExplodeImpactY", {
+  label: "impact Y",
+  min: -1,
+  max: 1,
+  step: 0.01,
+});
+fExplode.addBinding(params, "animExplodeImpactZPush", {
+  label: "Z push",
+  min: -600,
+  max: 600,
+  step: 5,
+});
+fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
+  label: "radial boost",
+  min: 0,
+  max: 2,
+  step: 0.01,
+});
+
+
       fAnim.addButton({ title: "Play" }).on("click", () => {
         window.__tp_animPlaying = true;
         window.playAnimation();
@@ -1102,6 +1166,17 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
       ]);
 
       const ANIM_KEYS = new Set([
+        "animExplodeImpactOn",
+"animExplodeImpactDir",
+"animExplodeImplode",
+"animExplodeImpactStrength",
+"animExplodeImpactRadius",
+"animExplodeImpactFalloff",
+"animExplodeImpactX",
+"animExplodeImpactY",
+"animExplodeImpactZPush",
+"animExplodeImpactRadialBoost",
+
         
         "animPreset",
         "animSpeed",
@@ -1275,6 +1350,7 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

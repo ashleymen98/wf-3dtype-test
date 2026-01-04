@@ -336,19 +336,6 @@ ensureParam("crowdShrink", 0.06);      // 0..0.12 (6% default)
 ensureParam("crowdSideFade", 0.55);    // 0..1 (55% fade max)
 ensureParam("crowdLineOnly", true);    // keep it per-line (best for type)
 
-// Blast (NEW preset) defaults
-ensureParam("animBlastZDir", "out");     // out | in
-ensureParam("animBlastZAmount", 0.18);   // 0..1  (scaled by blastPower)
-ensureParam("animBlastRadius", 260);       // how far from origin before falloff
-ensureParam("animBlastFalloff", 0.75);     // 0..1 (higher = stronger near origin)
-ensureParam("animBlastArc", 0.55);         // 0..1 arc amount
-ensureParam("animBlastTangential", 0.25);  // 0..1 swirl around origin
-ensureParam("animBlastJitter", 0.18);      // 0..1 adds irregularity
-ensureParam("animBlastPunch", 0.12);       // 0..0.4 quick scale punch
-ensureParam("animBlastTwistDeg", 110);     // extra spin during blast
-ensureParam("animBlastEaseOut", "expo.out");
-ensureParam("animBlastEaseIn", "power2.inOut");
-ensureParam("animBlastReturn", true);      // blast out then return
 
 
 
@@ -1914,8 +1901,6 @@ function playAnimation() {
       rz: 0,
       s: 1,
       ex: 0,
-        bl: 0,      
-  _blast: false, 
       members,
     }));
 
@@ -1923,31 +1908,6 @@ function playAnimation() {
   const inflateAmt = Number(params.animInflate || 0.18);
 
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
-
-  // Blast tuning
-// ---------------------------
-// Blast tuning (use the params)
-// ---------------------------
-const blastPower   = Number(params.animBlastRadius ?? 260) * 0.85;
-
-
-const blastRadius = Math.max(1e-6, Number(params.animBlastRadius ?? 260));
-const blastFalloff = clamp01(Number(params.animBlastFalloff ?? 0.75));
-
-const blastArc = clamp01(Number(params.animBlastArc ?? 0.55));
-const blastTan = clamp01(Number(params.animBlastTangential ?? 0.25));
-const blastJit = clamp01(Number(params.animBlastJitter ?? 0.18));
-
-const blastPunch = clamp01(Number(params.animBlastPunch ?? 0.12));
-const blastRotRad = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
-
-const blastEaseOut = params.animBlastEaseOut || "expo.out";
-const blastEaseIn  = params.animBlastEaseIn  || "power2.inOut";
-const blastReturn  = !!params.animBlastReturn;
-
-const blastZDir = (String(params.animBlastZDir || "out").toLowerCase() === "in") ? -1 : 1;
-const blastZAmount = clamp01(Number(params.animBlastZAmount ?? 0.18)); // 0..1
-
 
 
   // Explode tuning (v14)
@@ -1974,13 +1934,8 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
 
   
 
-   // ---------------------------
-  // Blast params (safe defaults)
-  // ---------------------------
   
- function applyProxy(p) {
-  const isBlast = !!p._blast;
-
+  function applyProxy(p) {
   for (const m of p.members) {
     let ox = 0, oy = 0, oz = 0;
     let arx = 0, ary = 0, arz = 0;
@@ -2039,118 +1994,6 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
     }
 
     // ---------------------------
-    // Blast (radial + arc + swirl + jitter + punch + Z)
-    // FIX: Z no longer collapses at bl=1 (adds a "hold" term)
-    // ---------------------------
-    // We'll stash shock/t for depth punch later:
-    let _blastT = 0;
-    let _blastShock = 0;
-
-    if (isBlast && p.bl && p.bl !== 0) {
-      // origin (center)
-      const Ox = 0, Oy = 0;
-
-      const bx = (typeof m.baseGroupX === "number")
-        ? m.baseGroupX
-        : (typeof m.baseX === "number" ? m.baseX : 0);
-
-      const by = (typeof m.baseGroupY === "number")
-        ? m.baseGroupY
-        : (typeof m.baseY === "number" ? m.baseY : 0);
-
-      const vx = bx - Ox;
-      const vy = by - Oy;
-      const dist = Math.hypot(vx, vy) + 1e-6;
-
-      // 1 at origin, 0 at radius+
-      let t = clamp01(1 - dist / blastRadius);
-
-      // tighten falloff: higher animBlastFalloff = more concentrated near origin
-      {
-        const k = 1 + 3 * blastFalloff; // 1..4
-        t = Math.pow(t, k);
-      }
-
-      const bl01 = clamp01(p.bl);
-
-      // mid-peaking impulse (blast wave)
-      const shock = Math.sin(Math.PI * bl01);
-
-      // hold keeps values "out" at bl=1 (prevents z collapse)
-      const hold = bl01;
-
-      _blastT = t;
-      _blastShock = shock;
-
-      // base force
-      const force = blastPower * bl01 * t;
-
-      // radial unit
-      const nx = vx / dist;
-      const ny = vy / dist;
-
-      // tangential unit
-      const tx = -ny;
-      const ty = nx;
-
-      // stable jitter seed (-1..1)
-      const j = (m._spinJitter || 0);
-
-      // small angular jitter on the radial direction
-      const jAng = j * blastJit * 0.85;
-      const cj = Math.cos(jAng), sj = Math.sin(jAng);
-      const jrx = nx * cj - ny * sj;
-      const jry = nx * sj + ny * cj;
-
-      // slight magnitude jitter
-      const jf = 1 + j * blastJit * 0.35;
-
-      // mid-peaking arc
-      const arcF = shock * blastArc;
-
-      // persistent swirl (distance-shaped)
-      const swirlF = blastTan * t;
-
-      // ------------- XY offsets -------------
-      ox += jrx * force * jf;
-      oy += jry * force * jf;
-
-      ox += tx * force * arcF * 0.55;
-      oy += ty * force * arcF * 0.55;
-
-      ox += tx * force * swirlF * 0.35;
-      oy += ty * force * swirlF * 0.35;
-
-      // ------------- Z "bomb" offset -------------
-      // KEY FIX:
-      // - add "hold" so Z stays separated at bl=1
-      // - keep some "shock" so it still feels like an impact
-      // - add stable per-glyph variance so it doesn't look planar
-      const zJ = stableJitter((m.overlayIndex || 0) + 7001); // -1..1 stable
-      const zVar = 1 + zJ * 0.25; // 25% variance
-
-      // shape: mostly hold, some shock
-      const zShape = (0.65 * hold) + (0.35 * shock);
-
-      // also give a small baseline so distant letters still get some Z separation
-      const zDist = 0.35 + 0.65 * t; // 0.35..1
-
-      oz += blastZDir * (blastZAmount * blastPower) * zShape * zDist * zVar;
-
-      // ------------- Twist (stable sign) -------------
-      if (blastRotRad) {
-        const sgn = stablePickSign(m.overlayIndex || 0, true);
-        const twistShape = (0.55 * hold) + (0.45 * shock);
-        arz += blastRotRad * twistShape * t * sgn;
-      }
-
-      // ------------- Punch scale (impact) -------------
-      if (blastPunch) {
-        asc *= 1 + blastPunch * shock * t;
-      }
-    }
-
-    // ---------------------------
     // Shared proxy transforms (ALWAYS apply)
     // ---------------------------
     arx += p.rx || 0;
@@ -2183,15 +2026,7 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
     // depth thinning during explode
     const baseF = (typeof p.f === "number") ? p.f : 1;
     const thinMul = 1 - exDepthShrink * m.explodeF;
-
-    // OPTIONAL: depth "thump" during blast (extrusion punch)
-    // if you don't want it, set animBlastDepthPunch = 0 in params.
-    const blastDepthPunch = clamp01(Number(params.animBlastDepthPunch ?? 0.35));
-    const blastMul = (isBlast && blastDepthPunch > 0 && _blastShock > 0)
-      ? (1 + blastDepthPunch * _blastShock * _blastT)
-      : 1;
-
-    m.depthF = baseF * thinMul * blastMul;
+    m.depthF = baseF * thinMul;
 
     _updateDepth(m);
   }
@@ -2200,8 +2035,6 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
 
 
 
-
-for (const p of proxies) applyProxy(p); 
 
 
 // Apply once immediately so the initial state matches params
@@ -2226,8 +2059,6 @@ for (const p of proxies) {
   p.rx = 0; p.ry = 0; p.rz = 0;
   p.s = 1;
   p.ex = 0;
-  p.bl = 0;
-  p._blast = (preset === "blast");
 }
 
 const axis = (params.animAxis || "y").toLowerCase();
@@ -2723,34 +2554,6 @@ function updateHoverEffects() {
   const sweepBias = Number(params.sweepBias || 1);
   const sweepYMix = Number(params.sweepYMix || 0.25);
 
-  // ---------------------------
-// Blast params (from UI)
-// ---------------------------
-const blastZMode = (params.animBlastZMode || "camera").toLowerCase(); // camera | world | none
-const blastZAmt = Number(params.animBlastZAmount ?? 220);
-const blastZInv = !!params.animBlastZInvert;
-const blastZSpread = Number(params.animBlastZSpread ?? 0.25);
-const blastDepthPunch = Number(params.animBlastDepthPunch ?? 0.35);
-const blastOrigin = (params.animBlastOrigin || "center").toLowerCase();
-const blastRadius = Number(params.animBlastRadius ?? 260);
-const blastFalloff = Number(params.animBlastFalloff ?? 0.75);
-const blastArc = Number(params.animBlastArc ?? 0.55);
-const blastTan = Number(params.animBlastTangential ?? 0.25);
-const blastJit = Number(params.animBlastJitter ?? 0.18);
-const blastPunch = Number(params.animBlastPunch ?? 0.12);
-
-// twist in UI is degrees
-const blastRotRad = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
-
-const blastEaseOut = params.animBlastEaseOut || "expo.out";
-const blastEaseIn  = params.animBlastEaseIn  || "power2.inOut";
-const blastReturn  = !!params.animBlastReturn;
-
-// strength (optional): if you don't have a dedicated param, reuse explode amount or rotate deg
-// Recommended: add ensureParam(params, "animBlastPower", 1.0) later if you want a clean knob.
-const blastPower = 1;
-
-
   // Explode (hover)
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
@@ -3158,6 +2961,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

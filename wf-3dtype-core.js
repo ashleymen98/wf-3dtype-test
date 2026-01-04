@@ -2677,6 +2677,29 @@ function updateHoverEffects() {
   const sweepBias = Number(params.sweepBias || 1);
   const sweepYMix = Number(params.sweepYMix || 0.25);
 
+  // ---------------------------
+// Blast params (from UI)
+// ---------------------------
+const blastOrigin = (params.animBlastOrigin || "center").toLowerCase();
+const blastRadius = Number(params.animBlastRadius ?? 260);
+const blastFalloff = Number(params.animBlastFalloff ?? 0.75);
+const blastArc = Number(params.animBlastArc ?? 0.55);
+const blastTan = Number(params.animBlastTangential ?? 0.25);
+const blastJit = Number(params.animBlastJitter ?? 0.18);
+const blastPunch = Number(params.animBlastPunch ?? 0.12);
+
+// twist in UI is degrees
+const blastRotRad = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
+
+const blastEaseOut = params.animBlastEaseOut || "expo.out";
+const blastEaseIn  = params.animBlastEaseIn  || "power2.inOut";
+const blastReturn  = !!params.animBlastReturn;
+
+// strength (optional): if you don't have a dedicated param, reuse explode amount or rotate deg
+// Recommended: add ensureParam(params, "animBlastPower", 1.0) later if you want a clean knob.
+const blastPower = 1;
+
+
   // Explode (hover)
   const explodeAmt = Number(params.hoverExplodeAmount ?? 120);
   const explodeTwist = THREE.MathUtils.degToRad(Number(params.hoverExplodeTwistDeg ?? 35));
@@ -3084,6 +3107,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

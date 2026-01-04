@@ -1979,262 +1979,219 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
   // ---------------------------
   
   function applyProxy(p) {
-    const isBlast = !!p._blast;
+  const isBlast = !!p._blast;
 
-    for (const m of p.members) {
-      let ox = 0,
-        oy = 0,
-        oz = 0;
-      let arx = 0,
-        ary = 0,
-        arz = 0;
-      let asc = 1;
+  for (const m of p.members) {
+    let ox = 0, oy = 0, oz = 0;
+    let arx = 0, ary = 0, arz = 0;
+    let asc = 1;
 
-      // ---------------------------
-      // Explode (your existing logic)
-      // ---------------------------
-      if (p.ex && p.ex !== 0) {
-        // Stable base angle + field rotation
-        const a0 = (m._expU || 0) + exAng;
+    // ---------------------------
+    // Explode (existing logic)
+    // ---------------------------
+    if (p.ex && p.ex !== 0) {
+      const a0 = (m._expU || 0) + exAng;
 
-        // Direction
-        let dx = Math.cos(a0);
-        let dy = Math.sin(a0);
+      let dx = Math.cos(a0);
+      let dy = Math.sin(a0);
 
-        // Per-glyph noise on radius
-        const n = 1 + (m._spinJitter || 0) * exNoise;
+      const n = 1 + (m._spinJitter || 0) * exNoise;
 
-        // Ellipse scaling (with master diameter)
-        let sx = exDX * exD * n;
-        let sy = exDY * exD * n;
+      let sx = exDX * exD * n;
+      let sy = exDY * exD * n;
 
-        // Z seed
-        const zSeed = m._expZ || 0;
+      const zSeed = m._expZ || 0;
 
-        // NEW: stable Z layering during explode (reduces clipping)
-        m.explodeZLift = zSeed * exZLift * p.ex;
+      // stable Z layering during explode (reduces clipping)
+      m.explodeZLift = zSeed * exZLift * p.ex;
 
-        // Shape variants
-        if (exShape === "ring") {
-          // rotate direction around ring angle (independent control)
-          const c = Math.cos(exRingAng),
-            s = Math.sin(exRingAng);
-          const rx2 = dx * c - dy * s;
-          const ry2 = dx * s + dy * c;
-          dx = rx2;
-          dy = ry2;
-          // ring stays on plane unless ZAmount explicitly used below
-        } else if (exShape === "sphere") {
-          // sphere adds extra Z spread (scaled by explodeAmt for predictable feel)
-          oz += zSeed * (explodeAmt * exZSpread) * p.ex;
-        } else if (exShape === "linex") {
-          dx = Math.sign(dx || 1);
-          dy = 0;
-          sy = 0;
-        } else if (exShape === "liney") {
-          dx = 0;
-          dy = Math.sign(dy || 1);
-          sx = 0;
-        } // burst default
-
-        // Position offsets
-        ox += dx * explodeAmt * sx * p.ex;
-        oy += dy * explodeAmt * sy * p.ex;
-
-        // Z scatter (optional, works for all shapes)
-        oz += zSeed * exZ * p.ex;
-
-        // per-char rotation on chosen/random axis
-        let ax = exRotAxisBase;
-        if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
-        const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
-        const r = exRotRad * dir * p.ex;
-
-        if (ax === "x") arx += r;
-        else if (ax === "y") ary += r;
-        else arz += r;
+      if (exShape === "ring") {
+        const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
+        const rx2 = dx * c - dy * s;
+        const ry2 = dx * s + dy * c;
+        dx = rx2; dy = ry2;
+      } else if (exShape === "sphere") {
+        oz += zSeed * (explodeAmt * exZSpread) * p.ex;
+      } else if (exShape === "linex" || exShape === "linex") {
+        dx = Math.sign(dx || 1); dy = 0; sy = 0;
+      } else if (exShape === "liney" || exShape === "liney") {
+        dx = 0; dy = Math.sign(dy || 1); sx = 0;
       }
 
-      // ---------------------------
-      // NEW: Blast (radial push from origin)
-      // ---------------------------
-           // ---------------------------
-      // Blast (radial + arc + swirl + jitter + punch + Z)
-      // ---------------------------
-      if (isBlast && p.bl && p.bl !== 0) {
-        // Origin is hard-locked to center now (cursor mode removed)
-        const Ox = 0, Oy = 0;
+      ox += dx * explodeAmt * sx * p.ex;
+      oy += dy * explodeAmt * sy * p.ex;
 
-        // Use stable, layout-based coords (these exist in your entries)
-        const bx = (typeof m.baseGroupX === "number") ? m.baseGroupX : (typeof m.baseX === "number" ? m.baseX : 0);
-        const by = (typeof m.baseGroupY === "number") ? m.baseGroupY : 0;
+      oz += zSeed * exZ * p.ex;
 
-        const vx = bx - Ox;
-        const vy = by - Oy;
-        const dist = Math.hypot(vx, vy) + 1e-6;
+      // per-char rotation on chosen/random axis
+      let ax = exRotAxisBase;
+      if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
+      const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
+      const r = exRotRad * dir * p.ex;
 
-        // Influence: 1 at origin, 0 at radius+
-        let t = clamp01(1 - dist / blastRadius);
+      if (ax === "x") arx += r;
+      else if (ax === "y") ary += r;
+      else arz += r;
+    } else {
+      // keep explodeZLift from sticking when explode is off
+      m.explodeZLift = 0;
+    }
 
-        // Falloff curve (numeric strength: 0 linear -> 1 tight)
-        {
-          const k = 1 + 3 * blastFalloff; // 1..4
-          t = Math.pow(t, k);
-        }
+    // ---------------------------
+    // Blast (radial + arc + swirl + jitter + punch + Z)
+    // ---------------------------
+    if (isBlast && p.bl && p.bl !== 0) {
+      const Ox = 0, Oy = 0;
 
-        const force = blastPower * p.bl * t;
+      const bx = (typeof m.baseGroupX === "number")
+        ? m.baseGroupX
+        : (typeof m.baseX === "number" ? m.baseX : 0);
 
-        // Radial unit
-        const nx = vx / dist;
-        const ny = vy / dist;
+      const by = (typeof m.baseGroupY === "number") ? m.baseGroupY : 0;
 
-        // Tangential (perp) unit
-        const tx = -ny;
-        const ty = nx;
+      const vx = bx - Ox;
+      const vy = by - Oy;
+      const dist = Math.hypot(vx, vy) + 1e-6;
 
-        // Stable per-glyph jitter seed (-1..1)
-        const j = (m._spinJitter || 0);
+      // 1 at origin, 0 at radius+
+      let t = clamp01(1 - dist / blastRadius);
 
-        // Jitter direction a bit (small angular rotation of radial vector)
-        const jAng = j * blastJit * 0.85;
-        const cj = Math.cos(jAng), sj = Math.sin(jAng);
-        const jrx = nx * cj - ny * sj;
-        const jry = nx * sj + ny * cj;
+      // tighten falloff: higher animBlastFalloff = more concentrated near origin
+      {
+        const k = 1 + 3 * blastFalloff; // 1..4
+        t = Math.pow(t, k);
+      }
 
-        // Jitter force a bit (+/-)
-        const jf = 1 + j * blastJit * 0.35;
+      const force = blastPower * p.bl * t;
 
-        // ARC: peaks mid-blast (0..1..0)
-        const arcF = Math.sin(Math.PI * clamp01(p.bl)) * blastArc;
+      // radial
+      const nx = vx / dist;
+      const ny = vy / dist;
 
-        // SWIRL: persistent tangential drift (stronger near origin via t)
-        const swirlF = blastTan * t;
+      // tangential
+      const tx = -ny;
+      const ty = nx;
 
-        // Apply radial (jittered)
-        ox += jrx * force * jf;
-        oy += jry * force * jf;
+      // stable jitter seed (-1..1)
+      const j = (m._spinJitter || 0);
 
-        // Apply arc (mid-peaking sideways bow)
-        ox += tx * force * arcF * 0.55;
-        oy += ty * force * arcF * 0.55;
+      // small angular jitter
+      const jAng = j * blastJit * 0.85;
+      const cj = Math.cos(jAng), sj = Math.sin(jAng);
+      const jrx = nx * cj - ny * sj;
+      const jry = nx * sj + ny * cj;
 
-        // Apply swirl (orbity drift)
-        ox += tx * force * swirlF * 0.35;
-        oy += ty * force * swirlF * 0.35;
+      const jf = 1 + j * blastJit * 0.35;
 
-      
+      // mid-peaking arc
+      const arcF = Math.sin(Math.PI * clamp01(p.bl)) * blastArc;
 
-        // Twist during blast (stable sign)
-        if (blastRotRad) {
-          const sgn = stablePickSign(m.overlayIndex || 0, true);
-          arz += blastRotRad * p.bl * t * sgn;
-        }
+      // persistent swirl
+      const swirlF = blastTan * t;
 
-        if (blastPunch) {
-  const punchF = Math.sin(Math.PI * clamp01(p.bl));
-  asc *= 1 + blastPunch * punchF * t;
- }
-}// ✅ NOW add the shared transform assignments here
-      
-arx += p.rx || 0;
-ary += p.ry || 0;
-arz += p.rz || 0;
+      ox += jrx * force * jf;
+      oy += jry * force * jf;
 
-asc *= p.s || 1;
+      ox += tx * force * arcF * 0.55;
+      oy += ty * force * arcF * 0.55;
 
-m.animOffsetX = ox;
-m.animOffsetY = oy;
-m.animOffsetZ = oz;
-m.animRotX = arx;
-m.animRotY = ary;
-m.animRotZ = arz;
-m.animScale = asc;
+      ox += tx * force * swirlF * 0.35;
+      oy += ty * force * swirlF * 0.35;
 
-m.pivot.rotation.x = (m.baseRotX || 0) + m.animRotX;
-m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
-m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
+      // Z “push” during blast (uses your animBlastZAmount + animBlastZDir)
+      oz += blastZDir * (blastZAmount * blastPower) * p.bl * t;
 
-const bsx = m.baseScaleX || 1,
-  bsy = m.baseScaleY || 1,
-  bsz = m.baseScaleZ || 1;
-m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
+      // Twist (stable sign)
+      if (blastRotRad) {
+        const sgn = stablePickSign(m.overlayIndex || 0, true);
+        arz += blastRotRad * p.bl * t * sgn;
+      }
 
-m.explodeF = p.ex || 0;
+      // Punch scale
+      if (blastPunch) {
+        const punchF = Math.sin(Math.PI * clamp01(p.bl));
+        asc *= 1 + blastPunch * punchF * t;
+      }
+    }
 
-const baseF = typeof p.f === "number" ? p.f : 1;
-const thinMul = 1 - exDepthShrink * m.explodeF;
-m.depthF = baseF * thinMul;
-_updateDepth(m);
+    // ---------------------------
+    // Shared proxy transforms (ALWAYS apply)
+    // ---------------------------
+    arx += p.rx || 0;
+    ary += p.ry || 0;
+    arz += p.rz || 0;
 
-} // ✅ closes: for (const m of p.members)
-} // ✅ closes: function applyProxy(p)
+    asc *= p.s || 1;
+
+    m.animOffsetX = ox;
+    m.animOffsetY = oy;
+    m.animOffsetZ = oz;
+
+    m.animRotX = arx;
+    m.animRotY = ary;
+    m.animRotZ = arz;
+
+    m.animScale = asc;
+
+    m.pivot.rotation.x = (m.baseRotX || 0) + m.animRotX;
+    m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
+    m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
+
+    const bsx = m.baseScaleX || 1;
+    const bsy = m.baseScaleY || 1;
+    const bsz = m.baseScaleZ || 1;
+    m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
+
+    m.explodeF = p.ex || 0;
+
+    // depth thinning during explode
+    const baseF = (typeof p.f === "number") ? p.f : 1;
+    const thinMul = 1 - exDepthShrink * m.explodeF;
+    m.depthF = baseF * thinMul;
+
+    _updateDepth(m);
+  }
+}
+
+
 
 for (const p of proxies) applyProxy(p); 
 
 
-tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
-  const preset = (params.animPreset || "depth").toLowerCase();
-  const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
+// Apply once immediately so the initial state matches params
+for (const p of proxies) applyProxy(p);
 
-  const tweenVars = {
-    duration,
-    ease,
-    stagger: { each: stagger, from: params.animStaggerFrom },
-    onUpdate: () => {
-      for (const p of proxies) applyProxy(p);
-      _applyCharZOffsetsFromParams();
-    },
-  };
+const preset = (params.animPreset || "depth").toLowerCase();
+const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
 
-  // preset flag for blast
-  const blastPresetActive = preset === "blast";
+// Base tween vars shared by all presets
+const tweenVars = {
+  duration,
+  stagger: { each: stagger, from: params.animStaggerFrom },
+  onUpdate: () => {
+    for (const p of proxies) applyProxy(p);
+    _applyCharZOffsetsFromParams();
+  },
+};
 
-  for (const p of proxies) {
-    p.f = alsoDepth ? minF : undefined;
-    p.rx = 0;
-    p.ry = 0;
-    p.rz = 0;
-    p.s = 1;
+// Reset proxy channels
+for (const p of proxies) {
+  p.f = alsoDepth ? minF : undefined;
+  p.rx = 0; p.ry = 0; p.rz = 0;
+  p.s = 1;
+  p.ex = 0;
+  p.bl = 0;
+  p._blast = (preset === "blast");
+}
 
-    // explode
-    p.ex = 0;
+const axis = (params.animAxis || "y").toLowerCase();
+const depthTarget = maxF;
 
-    // NEW: blast
-    p.bl = 0;
-    p._blast = blastPresetActive;
-  }
+// Create the timeline *based on preset*
+if (tl) { tl.kill(); tl = null; }
 
-  const axis = (params.animAxis || "y").toLowerCase();
-  const depthTarget = maxF;
-
-  if (preset === "depth") {
-    tl.to(proxies, { ...tweenVars, f: depthTarget }, 0);
-  } else if (preset === "twist") {
-    const vars = { ...tweenVars };
-    if (axis === "x") vars.rx = rotRad;
-    else vars.ry = rotRad;
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
-  } else if (preset === "inflate") {
-    const vars = { ...tweenVars, s: 1 + inflateAmt };
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
-  } else if (preset === "spin") {
-    const vars = { ...tweenVars };
-    if (axis === "x") vars.rx = spinRad;
-    else if (axis === "y") vars.ry = spinRad;
-    else vars.rz = spinRad;
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
-  } else if (preset === "explode") {
-    const vars = { ...tweenVars, ex: 1 };
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
- } else if (preset === "blast") {
-  // Mark proxies as blast mode so applyProxy uses blast logic
-  for (const p of proxies) p._blast = true;
-
-  // Blast feels better as OUT then (optionally) RETURN, not yoyo
+if (preset === "blast") {
+  // Blast feels better as OUT then (optional) RETURN — no yoyo
   tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
   // OUT
@@ -2249,8 +2206,8 @@ tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
     0
   );
 
+  // RETURN
   if (blastReturn) {
-    // RETURN
     tl.to(
       proxies,
       {
@@ -2262,7 +2219,40 @@ tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
       ">-0.05"
     );
   }
+} else {
+  // Default presets use yoyo
+  tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
+
+  if (preset === "depth") {
+    tl.to(proxies, { ...tweenVars, ease, f: depthTarget }, 0);
+
+  } else if (preset === "twist") {
+    const vars = { ...tweenVars, ease };
+    if (axis === "x") vars.rx = rotRad;
+    else vars.ry = rotRad;
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+
+  } else if (preset === "inflate") {
+    const vars = { ...tweenVars, ease, s: 1 + inflateAmt };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+
+  } else if (preset === "spin") {
+    const vars = { ...tweenVars, ease };
+    if (axis === "x") vars.rx = spinRad;
+    else if (axis === "y") vars.ry = spinRad;
+    else vars.rz = spinRad;
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+
+  } else if (preset === "explode") {
+    const vars = { ...tweenVars, ease, ex: 1 };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
+  }
 }
+
 
 // ✅ CLOSE playAnimation() itself
 }
@@ -3094,6 +3084,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

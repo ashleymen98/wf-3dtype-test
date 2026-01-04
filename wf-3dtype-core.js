@@ -2235,7 +2235,7 @@ tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
   for (const p of proxies) p._blast = true;
 
   // Blast feels better as OUT then (optionally) RETURN, not yoyo
-tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
+  tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
   // OUT
   tl.to(
@@ -2262,10 +2262,13 @@ tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
       ">-0.05"
     );
   }
-
 }
-  
+
+// ✅ CLOSE playAnimation() itself
+}
+
 window.playAnimation = playAnimation;
+
 
 
 // ---------------------------
@@ -3091,6 +3094,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

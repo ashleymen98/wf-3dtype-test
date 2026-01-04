@@ -1935,7 +1935,6 @@ function playAnimation() {
 
   const blastPower = Number(params.animBlastRadius ?? 260) * 0.85; // or a dedicated param
 const blastZ = 0;                 // if you want Z push, set something like 0.08
-const blastScale = blastPunch;     // you already have blastPunch 0..0.4
 
 const blastOriginMode = String(params.animBlastOrigin || "center").toLowerCase();
 const blastRadius = Math.max(1e-6, Number(params.animBlastRadius ?? 260));
@@ -1944,6 +1943,8 @@ const blastArc = clamp01(Number(params.animBlastArc ?? 0.55));
 const blastTan = clamp01(Number(params.animBlastTangential ?? 0.25));
 const blastJit = clamp01(Number(params.animBlastJitter ?? 0.18));
 const blastPunch = clamp01(Number(params.animBlastPunch ?? 0.12));
+  const blastScale = blastPunch;     // you already have blastPunch 0..0.4
+
 const blastTwist = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
   const blastRotRad = blastTwist;    // you already computed blastTwist in radians
 
@@ -2083,9 +2084,13 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
         // influence: 1 at origin, 0 at radius and beyond
         let t = clamp01(1 - dist / blastRadius);
 
-        // falloff curve
-        if (blastFalloff === "smooth") t = t * t * (3 - 2 * t); // smoothstep
-        // else "linear" keeps t as-is
+       // falloff curve (numeric strength)
+// blastFalloff: 0 = linear, 1 = very tight near origin
+{
+  const k = 1 + 3 * blastFalloff; // 1 → 4
+  t = Math.pow(t, k);
+}
+
 
         const force = blastPower * p.bl * t;
 
@@ -3064,6 +3069,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

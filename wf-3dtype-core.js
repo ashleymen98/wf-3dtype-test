@@ -54,14 +54,6 @@ const FONT_PRESETS = {
     "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/gentilis_regular.typeface.json",
   "Gentilis Bold":
     "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/gentilis_bold.typeface.json",
-  "Droid Sans Regular":
-    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_sans_regular.typeface.json",
-  "Droid Sans Bold":
-    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_sans_bold.typeface.json",
-  "Droid Serif Regular":
-    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_serif_regular.typeface.json",
-  "Droid Serif Bold":
-    "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/droid/droid_serif_bold.typeface.json",
 };
 window.FONT_PRESETS = FONT_PRESETS;
 
@@ -345,7 +337,8 @@ ensureParam("crowdSideFade", 0.55);    // 0..1 (55% fade max)
 ensureParam("crowdLineOnly", true);    // keep it per-line (best for type)
 
 // Blast (NEW preset) defaults
-ensureParam("animBlastOrigin", "center");  // center | cursor
+ensureParam("animBlastZDir", "out");     // out | in
+ensureParam("animBlastZAmount", 0.18);   // 0..1  (scaled by blastPower)
 ensureParam("animBlastRadius", 260);       // how far from origin before falloff
 ensureParam("animBlastFalloff", 0.75);     // 0..1 (higher = stronger near origin)
 ensureParam("animBlastArc", 0.55);         // 0..1 arc amount
@@ -1932,25 +1925,29 @@ function playAnimation() {
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
 
   // Blast tuning
+// ---------------------------
+// Blast tuning (use the params)
+// ---------------------------
+const blastPower   = Number(params.animBlastRadius ?? 260) * 0.85;
 
-  const blastPower = Number(params.animBlastRadius ?? 260) * 0.85; // or a dedicated param
-const blastZ = 0;                 // if you want Z push, set something like 0.08
 
-const blastOriginMode = String(params.animBlastOrigin || "center").toLowerCase();
 const blastRadius = Math.max(1e-6, Number(params.animBlastRadius ?? 260));
 const blastFalloff = clamp01(Number(params.animBlastFalloff ?? 0.75));
+
 const blastArc = clamp01(Number(params.animBlastArc ?? 0.55));
 const blastTan = clamp01(Number(params.animBlastTangential ?? 0.25));
 const blastJit = clamp01(Number(params.animBlastJitter ?? 0.18));
-const blastPunch = clamp01(Number(params.animBlastPunch ?? 0.12));
-  const blastScale = blastPunch;     // you already have blastPunch 0..0.4
 
-const blastTwist = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
-  const blastRotRad = blastTwist;    // you already computed blastTwist in radians
+const blastPunch = clamp01(Number(params.animBlastPunch ?? 0.12));
+const blastRotRad = THREE.MathUtils.degToRad(Number(params.animBlastTwistDeg ?? 110));
 
 const blastEaseOut = params.animBlastEaseOut || "expo.out";
 const blastEaseIn  = params.animBlastEaseIn  || "power2.inOut";
-const blastReturn = !!params.animBlastReturn;
+const blastReturn  = !!params.animBlastReturn;
+
+const blastZDir = (String(params.animBlastZDir || "out").toLowerCase() === "in") ? -1 : 1;
+const blastZAmount = clamp01(Number(params.animBlastZAmount ?? 0.18)); // 0..1
+
 
 
   // Explode tuning (v14)
@@ -1975,14 +1972,7 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
   const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
   const exRandDir = !!params.animExplodeRandomDir;
 
-  function getBlastOriginLocal() {
-  // origin in *text-local* coords
-  if (blastOriginMode === "cursor" && pointerActive) {
-    // cursorLocal is already in text-local space
-    return { x: cursorLocal.x, y: cursorLocal.y };
-  }
-  return { x: 0, y: 0 }; // text is centered, so center origin works well
-}
+  
 
    // ---------------------------
   // Blast params (safe defaults)
@@ -2068,87 +2058,119 @@ const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); //
       // ---------------------------
       // NEW: Blast (radial push from origin)
       // ---------------------------
+           // ---------------------------
+      // Blast (radial + arc + swirl + jitter + punch + Z)
+      // ---------------------------
       if (isBlast && p.bl && p.bl !== 0) {
-        const O = getBlastOriginLocal();
+        // Origin is hard-locked to center now (cursor mode removed)
+        const Ox = 0, Oy = 0;
 
-        // Try to use stable local base coords if present; otherwise fall back safely.
-        const bx =
-          (typeof m.baseX === "number" ? m.baseX : typeof m._baseX === "number" ? m._baseX : 0);
-        const by =
-          (typeof m.baseY === "number" ? m.baseY : typeof m._baseY === "number" ? m._baseY : 0);
+        // Use stable, layout-based coords (these exist in your entries)
+        const bx = (typeof m.baseGroupX === "number") ? m.baseGroupX : (typeof m.baseX === "number" ? m.baseX : 0);
+        const by = (typeof m.baseGroupY === "number") ? m.baseGroupY : 0;
 
-        const vx = bx - O.x;
-        const vy = by - O.y;
+        const vx = bx - Ox;
+        const vy = by - Oy;
         const dist = Math.hypot(vx, vy) + 1e-6;
 
-        // influence: 1 at origin, 0 at radius and beyond
+        // Influence: 1 at origin, 0 at radius+
         let t = clamp01(1 - dist / blastRadius);
 
-       // falloff curve (numeric strength)
-// blastFalloff: 0 = linear, 1 = very tight near origin
-{
-  const k = 1 + 3 * blastFalloff; // 1 → 4
-  t = Math.pow(t, k);
-}
-
+        // Falloff curve (numeric strength: 0 linear -> 1 tight)
+        {
+          const k = 1 + 3 * blastFalloff; // 1..4
+          t = Math.pow(t, k);
+        }
 
         const force = blastPower * p.bl * t;
 
-        ox += (vx / dist) * force;
-        oy += (vy / dist) * force;
-        oz += blastZ * force;
+        // Radial unit
+        const nx = vx / dist;
+        const ny = vy / dist;
 
+        // Tangential (perp) unit
+        const tx = -ny;
+        const ty = nx;
+
+        // Stable per-glyph jitter seed (-1..1)
+        const j = (m._spinJitter || 0);
+
+        // Jitter direction a bit (small angular rotation of radial vector)
+        const jAng = j * blastJit * 0.85;
+        const cj = Math.cos(jAng), sj = Math.sin(jAng);
+        const jrx = nx * cj - ny * sj;
+        const jry = nx * sj + ny * cj;
+
+        // Jitter force a bit (+/-)
+        const jf = 1 + j * blastJit * 0.35;
+
+        // ARC: peaks mid-blast (0..1..0)
+        const arcF = Math.sin(Math.PI * clamp01(p.bl)) * blastArc;
+
+        // SWIRL: persistent tangential drift (stronger near origin via t)
+        const swirlF = blastTan * t;
+
+        // Apply radial (jittered)
+        ox += jrx * force * jf;
+        oy += jry * force * jf;
+
+        // Apply arc (mid-peaking sideways bow)
+        ox += tx * force * arcF * 0.55;
+        oy += ty * force * arcF * 0.55;
+
+        // Apply swirl (orbity drift)
+        ox += tx * force * swirlF * 0.35;
+        oy += ty * force * swirlF * 0.35;
+
+      
+
+        // Twist during blast (stable sign)
         if (blastRotRad) {
-          const sgn = stablePickSign(m.overlayIndex || 0, "random");
+          const sgn = stablePickSign(m.overlayIndex || 0, true);
           arz += blastRotRad * p.bl * t * sgn;
         }
 
-        if (blastScale) {
-          asc *= 1 + blastScale * p.bl * t;
-        }
-      }
+        if (blastPunch) {
+  const punchF = Math.sin(Math.PI * clamp01(p.bl));
+  asc *= 1 + blastPunch * punchF * t;
+ }
+}// ✅ NOW add the shared transform assignments here
+      
+arx += p.rx || 0;
+ary += p.ry || 0;
+arz += p.rz || 0;
 
-      // ---------------------------
-      // Shared transforms
-      // ---------------------------
-      arx += p.rx || 0;
-      ary += p.ry || 0;
-      arz += p.rz || 0;
+asc *= p.s || 1;
 
-      asc *= p.s || 1;
+m.animOffsetX = ox;
+m.animOffsetY = oy;
+m.animOffsetZ = oz;
+m.animRotX = arx;
+m.animRotY = ary;
+m.animRotZ = arz;
+m.animScale = asc;
 
-      m.animOffsetX = ox;
-      m.animOffsetY = oy;
-      m.animOffsetZ = oz;
-      m.animRotX = arx;
-      m.animRotY = ary;
-      m.animRotZ = arz;
-      m.animScale = asc;
+m.pivot.rotation.x = (m.baseRotX || 0) + m.animRotX;
+m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
+m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
 
-      m.pivot.rotation.x = (m.baseRotX || 0) + m.animRotX;
-      m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
-      m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
+const bsx = m.baseScaleX || 1,
+  bsy = m.baseScaleY || 1,
+  bsz = m.baseScaleZ || 1;
+m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
 
-      const bsx = m.baseScaleX || 1,
-        bsy = m.baseScaleY || 1,
-        bsz = m.baseScaleZ || 1;
-      m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
+m.explodeF = p.ex || 0;
 
-      // NEW: expose explode factor (optional but useful)
-      m.explodeF = p.ex || 0;
+const baseF = typeof p.f === "number" ? p.f : 1;
+const thinMul = 1 - exDepthShrink * m.explodeF;
+m.depthF = baseF * thinMul;
+_updateDepth(m);
 
-      // NEW: thin extrusion while exploding (reduces sidewall intersections)
-      const baseF = typeof p.f === "number" ? p.f : 1;
-      const thinMul = 1 - exDepthShrink * m.explodeF;
+} // ✅ closes: for (const m of p.members)
+} // ✅ closes: function applyProxy(p)
 
-      m.depthF = baseF * thinMul;
-      _updateDepth(m);
+for (const p of proxies) applyProxy(p); 
 
-      // position offset is handled by hover system; we store anim offsets and apply in hover update
-    }
-  }
-
-  for (const p of proxies) applyProxy(p);
 
 tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
   const preset = (params.animPreset || "depth").toLowerCase();
@@ -2242,7 +2264,7 @@ tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
   }
 
 }
-  }
+  
 window.playAnimation = playAnimation;
 
 
@@ -3069,6 +3091,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

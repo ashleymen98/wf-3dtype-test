@@ -1905,7 +1905,6 @@ function playAnimation() {
       rz: 0,
       s: 1,
       ex: 0,
-      im: 0, // NEW: impact channel (Phase A)
       members,
     }));
 
@@ -1914,7 +1913,7 @@ function playAnimation() {
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
 
   // ------------------------------------------------------------
-  // Explode tuning (v14)
+  // Explode tuning (v14 + impact + holds + easing + rot variance)
   // ------------------------------------------------------------
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
 
@@ -1922,7 +1921,9 @@ function playAnimation() {
   const exDY = Math.max(0.01, Number(params.animExplodeDiameterY ?? 1));
   const exD = Math.max(0.0, Number(params.animExplodeDiameter ?? 1.0)); // master
 
-  const exShape = String(params.animExplodeShape || "burst").toLowerCase();
+  // IMPORTANT: normalize shape names so your dropdown ALWAYS maps
+  const exShapeRaw = String(params.animExplodeShape || "burst");
+  const exShape = exShapeRaw.replace(/\s+/g, "").toLowerCase(); // "Line X" -> "linex"
   const exRingAng = THREE.MathUtils.degToRad(Number(params.animExplodeRingAngle ?? 0));
   const exNoise = clamp01(Number(params.animExplodeNoise ?? 0.15));
 
@@ -1934,12 +1935,20 @@ function playAnimation() {
   const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); // thin extrusion during explode
 
   const exRotAxisBase = String(params.animExplodeRotAxis || "z").toLowerCase();
-  const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
   const exRandDir = !!params.animExplodeRandomDir;
 
-  // ------------------------------------------------------------
-  // Impact-style explode (FIELD params you already added)
-  // ------------------------------------------------------------
+  // NEW: rotation variation (min/max degrees)
+  const exRotMinDeg = Number(params.animExplodeRotMinDeg ?? (params.animExplodeRotDeg ?? 55));
+  const exRotMaxDeg = Number(params.animExplodeRotMaxDeg ?? (params.animExplodeRotDeg ?? 55));
+
+  // NEW: explode OUT/RETURN eases + hold times
+  const exEaseOut = String(params.animExplodeEaseOut || "expo.out");
+  const exEaseIn = String(params.animExplodeEaseIn || "expo.in");
+  const exHold = Math.max(0, Number(params.animExplodeHold ?? 0));         // seconds pause at full explode
+  const exReturnHold = Math.max(0, Number(params.animExplodeReturnHold ?? 0)); // seconds pause after return
+  const exReturn = params.animExplodeReturn == null ? true : !!params.animExplodeReturn;
+
+  // Impact-style explode (existing)
   const exImpactOn = !!params.animExplodeImpactOn;
   const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back
   const exImplode = !!params.animExplodeImplode;
@@ -1952,11 +1961,24 @@ function playAnimation() {
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
   // ------------------------------------------------------------
-  // Helpers
+  // Helpers (local, safe)
   // ------------------------------------------------------------
   function smooth01(t) {
     t = clamp01(t);
     return t * t * (3 - 2 * t);
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  // stable 0..1 random from an integer seed (repeatable)
+  function stable01(seed) {
+    // xorshift-ish hash -> [0,1)
+    let x = (seed | 0) + 0x6D2B79F5;
+    x = Math.imul(x ^ (x >>> 15), 1 | x);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
   }
 
   function getGlyphXY(m) {
@@ -1967,69 +1989,14 @@ function playAnimation() {
     return [px, py];
   }
 
-  function getImpactImpulse(m) {
-    if (!exImpactOn) return 0;
-
-    const [gx, gy] = getGlyphXY(m);
-
-    // Map [-1..1] into radius space
-    const cx = (exImpactX || 0) * exImpactRadius;
-    const cy = (exImpactY || 0) * exImpactRadius;
-
-    const ddx = gx - cx;
-    const ddy = gy - cy;
-    const dist = Math.hypot(ddx, ddy);
-
-    // 1 near center, 0 outside radius
-    const t = 1 - dist / exImpactRadius;
-    const prox = smooth01(t);
-
-    // tighter “hit”
-    const impulse = Math.pow(prox, exImpactFalloff) * exImpactStrength;
-    return impulse;
-  }
-
   function applyProxy(p) {
     for (const m of p.members) {
-      let ox = 0,
-        oy = 0,
-        oz = 0;
-      let arx = 0,
-        ary = 0,
-        arz = 0;
+      let ox = 0, oy = 0, oz = 0;
+      let arx = 0, ary = 0, arz = 0;
       let asc = 1;
 
-      // -------------------------------------------------
-      // Phase A: IMPACT (driven by p.im) — makes it feel like mass hit
-      // -------------------------------------------------
-      if (p.im && p.im !== 0) {
-        const impulse = getImpactImpulse(m);
-
-        // keep some tiny per-glyph variation, but not floaty
-        const j = 1 + (m._spinJitter || 0) * 0.12;
-
-        // front => shove "back" (negative z), back => shove "forward" (positive z)
-        const dirZ = exImpactDir === "back" ? 1 : -1;
-
-        // Z shove is the main “thunk”
-        oz += dirZ * exImpactZPush * impulse * p.im * j;
-
-        // subtle inwards tug helps sell a “press”
-        const a0 = (m._expU || 0) + exAng;
-        const dx0 = Math.cos(a0);
-        const dy0 = Math.sin(a0);
-
-        const inPull = 0.22; // tuned constant; keep simple
-        ox += (-dx0) * explodeAmt * inPull * impulse * p.im;
-        oy += (-dy0) * explodeAmt * inPull * impulse * p.im;
-
-        // slight squash (scale) for impact
-        const squash = 0.16;
-        asc *= 1 - squash * impulse * p.im;
-      }
-
       // ---------------------------
-      // Explode (driven by p.ex) — burst happens after impact
+      // Explode (upgraded + impact)
       // ---------------------------
       if (p.ex && p.ex !== 0) {
         const a0 = (m._expU || 0) + exAng;
@@ -2048,56 +2015,84 @@ function playAnimation() {
         m.explodeZLift = zSeed * exZLift * p.ex;
         if (p.z0 == null) p.z0 = p.z || 0;
 
-        // impact field also boosts burst (less floaty, more “blast” near hit)
+        // NEW: Impact field (mass hits from front/back)
         let impactMul = 1;
+        let impactZ = 0;
+
         if (exImpactOn) {
-          const impulse = getImpactImpulse(m);
+          const [gx, gy] = getGlyphXY(m);
+
+          const cx = (exImpactX || 0) * exImpactRadius;
+          const cy = (exImpactY || 0) * exImpactRadius;
+
+          const ddx = gx - cx;
+          const ddy = gy - cy;
+          const dist = Math.hypot(ddx, ddy);
+
+          const t = 1 - dist / exImpactRadius;
+          const prox = smooth01(t);
+
+          const impulse = Math.pow(prox, exImpactFalloff) * exImpactStrength;
+
           impactMul = 1 + exImpactRadialBoost * impulse;
+
+          const dirZ = exImpactDir === "back" ? 1 : -1;
+          impactZ = dirZ * exImpactZPush * impulse;
         }
 
-        // shape controls (kept)
+        // -------------------------------------------------
+        // Shape controls (these SHOULD look different)
+        // -------------------------------------------------
         if (exShape === "ring") {
-          const c = Math.cos(exRingAng),
-            s = Math.sin(exRingAng);
+          const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
           const rx2 = dx * c - dy * s;
           const ry2 = dx * s + dy * c;
-          dx = rx2;
-          dy = ry2;
+          dx = rx2; dy = ry2;
+
+          // ring == keep XY, but a bit less noisy Z unless user adds it
+          // (still allows exZ + impactZ)
         } else if (exShape === "sphere") {
+          // sphere adds Z dispersion on top of existing exZ + impactZ
           oz += zSeed * (explodeAmt * exZSpread) * p.ex;
         } else if (exShape === "linex") {
           dx = Math.sign(dx || 1);
           dy = 0;
-          sy = 0;
+          sy = 0; // kill Y
         } else if (exShape === "liney") {
           dx = 0;
           dy = Math.sign(dy || 1);
-          sx = 0;
+          sx = 0; // kill X
+        } else {
+          // "burst" -> default (dx,dy already radial)
         }
 
+        // Apply explode with impact feel
         const inOut = exImplode ? -1 : 1;
 
         ox += dx * explodeAmt * sx * p.ex * impactMul * inOut;
         oy += dy * explodeAmt * sy * p.ex * impactMul * inOut;
 
         oz += zSeed * exZ * p.ex;
+        oz += impactZ * p.ex;
 
-        // per-char rotation on chosen/random axis
+        // per-char rotation on chosen/random axis + NEW min/max variance
         let ax = exRotAxisBase;
         if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
-        const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
-        const r = exRotRad * dir * p.ex;
+
+        const sign = stablePickSign(m.overlayIndex || 0, exRandDir);
+        const r01 = stable01((m.overlayIndex || 0) + 1337);
+        const rDeg = lerp(exRotMinDeg, exRotMaxDeg, r01);
+        const r = THREE.MathUtils.degToRad(rDeg) * sign * p.ex;
 
         if (ax === "x") arx += r;
         else if (ax === "y") ary += r;
         else arz += r;
       } else {
-        // keep explodeZLift from sticking when explode is off
         m.explodeZLift = 0;
       }
 
       // ---------------------------
-      // Shared proxy transforms (ALWAYS apply)
+      // Shared proxy transforms
       // ---------------------------
       arx += p.rx || 0;
       ary += p.ry || 0;
@@ -2141,7 +2136,6 @@ function playAnimation() {
   const preset = (params.animPreset || "depth").toLowerCase();
   const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
 
-  // Base tween vars shared by all presets
   const tweenVars = {
     duration,
     stagger: { each: stagger, from: params.animStaggerFrom },
@@ -2154,27 +2148,21 @@ function playAnimation() {
   // Reset proxy channels
   for (const p of proxies) {
     p.f = alsoDepth ? minF : undefined;
-    p.rx = 0;
-    p.ry = 0;
-    p.rz = 0;
+    p.rx = 0; p.ry = 0; p.rz = 0;
     p.s = 1;
     p.ex = 0;
-    p.im = 0;
   }
 
   const axis = (params.animAxis || "y").toLowerCase();
   const depthTarget = maxF;
 
-  // Create the timeline *based on preset*
-  if (tl) {
-    tl.kill();
-    tl = null;
-  }
+  if (tl) { tl.kill(); tl = null; }
 
   // ------------------------------------------------------------
-  // PRESET: BLAST (your special case)
+  // Timeline routing
   // ------------------------------------------------------------
   if (preset === "blast") {
+    // unchanged (your blast logic)
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
     tl.to(
@@ -2201,71 +2189,36 @@ function playAnimation() {
       );
     }
 
-    // ------------------------------------------------------------
-    // PRESET: EXPLODE (NEW: HIT -> BURST -> optional RETURN)
-    // ------------------------------------------------------------
   } else if (preset === "explode") {
-    const impactOn = !!params.animExplodeImpactOn; // uses your existing toggle
-    const impactFrac = clamp01(Number(params.animExplodeImpactFrac ?? 0.18));
-    const impactEase = String(params.animExplodeImpactEase || "power4.out");
-    const burstEase = String(params.animExplodeBurstEase || "expo.out");
-
-    const returnOn = !!params.animExplodeReturn;
-    const returnEase = String(params.animExplodeReturnEase || "expo.in");
-
+    // NEW: explode is OUT -> HOLD -> (optional) RETURN -> HOLD
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
-    // Phase A: IMPACT (no stagger, quick)
-    if (impactOn) {
-      tl.to(
-        proxies,
-        {
-          duration: Math.max(0.001, duration * impactFrac),
-          ease: impactEase,
-          im: 1,
-          ...(alsoDepth ? { f: minF } : {}),
-          onUpdate: tweenVars.onUpdate,
-        },
-        0
-      );
+    // OUT
+    {
+      const vars = { ...tweenVars, ease: exEaseOut, ex: 1 };
+      if (alsoDepth) vars.f = depthTarget;
+      tl.to(proxies, vars, 0);
     }
 
-    // Phase B: BURST (stagger OK)
-    tl.to(
-      proxies,
-      {
-        duration: Math.max(0.001, duration * (impactOn ? 1 - impactFrac : 1)),
-        ease: burstEase,
-        ex: 1,
-        im: 0,
-        stagger: { each: stagger, from: params.animStaggerFrom },
-        ...(alsoDepth ? { f: depthTarget } : {}),
-        onUpdate: tweenVars.onUpdate,
-      },
-      impactOn ? ">-=0.02" : 0
-    );
-
-    // Phase C: RETURN (optional)
-    if (returnOn) {
-      tl.to(
-        proxies,
-        {
-          duration: Math.max(0.001, duration * 0.55),
-          ease: returnEase,
-          ex: 0,
-          im: 0,
-          stagger: { each: stagger * 0.7, from: params.animStaggerFrom },
-          ...(alsoDepth ? { f: minF } : {}),
-          onUpdate: tweenVars.onUpdate,
-        },
-        ">-=0.06"
-      );
+    // HOLD at full explode
+    if (exHold > 0) {
+      tl.to({}, { duration: exHold }, ">");
     }
 
-    // ------------------------------------------------------------
-    // DEFAULT PRESETS (yoyo is fine)
-    // ------------------------------------------------------------
+    // RETURN
+    if (exReturn) {
+      const vars = { ...tweenVars, ease: exEaseIn, ex: 0 };
+      if (alsoDepth) vars.f = minF;
+      tl.to(proxies, vars, ">");
+    }
+
+    // HOLD after return (before repeating)
+    if (exReturnHold > 0) {
+      tl.to({}, { duration: exReturnHold }, ">");
+    }
+
   } else {
+    // Default presets use yoyo (unchanged)
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
 
     if (preset === "depth") {
@@ -2290,17 +2243,12 @@ function playAnimation() {
       else vars.rz = spinRad;
       if (alsoDepth) vars.f = depthTarget;
       tl.to(proxies, vars, 0);
-
-    } else if (preset === "explode") {
-      // (should not hit because explode is handled above)
-      const vars = { ...tweenVars, ease, ex: 1 };
-      if (alsoDepth) vars.f = depthTarget;
-      tl.to(proxies, vars, 0);
     }
   }
 }
 
 window.playAnimation = playAnimation;
+
 
 
 
@@ -3129,6 +3077,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

@@ -169,6 +169,18 @@ ensureParam(params, "animExplodeImpactZPush", 160);    // Z shove amount
 ensureParam(params, "animExplodeImpactRadialBoost", 0.55); // extra XY boost near hit
 
 
+
+
+ensureParam(params, "animExplodeImpactFrac", 0.18);
+
+ensureParam(params, "animExplodeImpactEase", "power4.out");
+ensureParam(params, "animExplodeBurstEase", "expo.out");
+ensureParam(params, "animExplodeReturn", false);
+ensureParam(params, "animExplodeReturnEase", "expo.in");
+
+      
+
+
       // Hover Spin360 (NEW fixed mapping)
       ensureParam(params, "hoverSpin360Axis", "random");
       ensureParam(params, "hoverSpin360RandomDir", true);
@@ -1352,6 +1364,7 @@ fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

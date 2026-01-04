@@ -157,17 +157,7 @@ const params = (window.params ||= {
   animExplodeAmount: 220, // base distance
 
   // Impact-style explode (NEW)
-const exImpactOn = !!params.animExplodeImpactOn;
-const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back
-const exImplode = !!params.animExplodeImplode;
 
-const exImpactStrength = Number(params.animExplodeImpactStrength ?? 1.0);
-const exImpactRadius = Math.max(1, Number(params.animExplodeImpactRadius ?? 260));
-const exImpactFalloff = Math.max(0.01, Number(params.animExplodeImpactFalloff ?? 2.2));
-const exImpactX = Number(params.animExplodeImpactX ?? 0); // -1..1
-const exImpactY = Number(params.animExplodeImpactY ?? 0); // -1..1
-const exImpactZPush = Number(params.animExplodeImpactZPush ?? 160);
-const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
 
   // legacy ellipse scalers (kept)
@@ -1926,6 +1916,21 @@ function playAnimation() {
   // ------------------------------------------------------------
   // Explode tuning (v14)
   // ------------------------------------------------------------
+
+    const exImpactOn = !!params.animExplodeImpactOn;
+
+const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back
+const exImplode = !!params.animExplodeImplode;
+
+const exImpactStrength = Number(params.animExplodeImpactStrength ?? 1.0);
+const exImpactRadius = Math.max(1, Number(params.animExplodeImpactRadius ?? 260));
+const exImpactFalloff = Math.max(0.01, Number(params.animExplodeImpactFalloff ?? 2.2));
+const exImpactX = Number(params.animExplodeImpactX ?? 0); // -1..1
+const exImpactY = Number(params.animExplodeImpactY ?? 0); // -1..1
+const exImpactZPush = Number(params.animExplodeImpactZPush ?? 160);
+const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
+
+  
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
 
   const exDX = Math.max(0.01, Number(params.animExplodeDiameterX ?? 1));
@@ -3045,6 +3050,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

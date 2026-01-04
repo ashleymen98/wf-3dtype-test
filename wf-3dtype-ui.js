@@ -102,6 +102,8 @@
       // ---------------------------
       // SAFE DEFAULTS
       // ---------------------------
+      ensureParam(params, "animExplodeDepthShrink", 0.22);
+
       ensureParam(params, "bgMode", "solid");
       ensureParam(params, "bgSolid", "#111111");
 
@@ -1350,6 +1352,7 @@ fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

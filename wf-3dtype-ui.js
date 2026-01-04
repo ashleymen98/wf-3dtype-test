@@ -169,14 +169,24 @@ ensureParam(params, "animExplodeImpactZPush", 160);    // Z shove amount
 ensureParam(params, "animExplodeImpactRadialBoost", 0.55); // extra XY boost near hit
 
 
-
-
 ensureParam(params, "animExplodeImpactFrac", 0.18);
 
 ensureParam(params, "animExplodeImpactEase", "power4.out");
 ensureParam(params, "animExplodeBurstEase", "expo.out");
 ensureParam(params, "animExplodeReturn", false);
 ensureParam(params, "animExplodeReturnEase", "expo.in");
+
+      // Explode OUT/RETURN timing + easing (NEW)
+ensureParam(params, "animExplodeHold", 0.15);           // pause at full explode
+ensureParam(params, "animExplodeReturn", true);         // whether it comes back
+ensureParam(params, "animExplodeReturnHold", 0.10);     // pause after return
+ensureParam(params, "animExplodeEaseOut", "expo.out");  // explode easing
+ensureParam(params, "animExplodeEaseIn", "expo.in");    // return easing
+
+// Explode rotation variance (NEW)
+ensureParam(params, "animExplodeRotMinDeg", 20);
+ensureParam(params, "animExplodeRotMaxDeg", 85);
+
 
       
 
@@ -1013,6 +1023,35 @@ fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
   step: 0.01,
 });
 
+      // NEW: hold + easing + return
+fExplode.addBinding(params, "animExplodeHold", { label: "hold (s)", min: 0, max: 2, step: 0.01 });
+fExplode.addBinding(params, "animExplodeEaseOut", {
+  label: "ease out",
+  options: {
+    "expo.out": "expo.out",
+    "power4.out": "power4.out",
+    "power3.out": "power3.out",
+    "sine.out": "sine.out",
+    "back.out(1.6)": "back.out(1.6)",
+  },
+});
+fExplode.addBinding(params, "animExplodeReturn", { label: "return" });
+fExplode.addBinding(params, "animExplodeEaseIn", {
+  label: "ease in",
+  options: {
+    "expo.in": "expo.in",
+    "power4.in": "power4.in",
+    "power3.in": "power3.in",
+    "sine.in": "sine.in",
+  },
+});
+fExplode.addBinding(params, "animExplodeReturnHold", { label: "return hold (s)", min: 0, max: 2, step: 0.01 });
+
+// NEW: rotation min/max
+fExplode.addBinding(params, "animExplodeRotMinDeg", { label: "rot min", min: 0, max: 720, step: 1 });
+fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, max: 720, step: 1 });
+
+
 
       fAnim.addButton({ title: "Play" }).on("click", () => {
         window.__tp_animPlaying = true;
@@ -1190,6 +1229,14 @@ fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
 "animExplodeImpactY",
 "animExplodeImpactZPush",
 "animExplodeImpactRadialBoost",
+        "animExplodeHold",
+"animExplodeReturn",
+"animExplodeReturnHold",
+"animExplodeEaseOut",
+"animExplodeEaseIn",
+"animExplodeRotMinDeg",
+"animExplodeRotMaxDeg",
+
 
         
         "animPreset",
@@ -1364,6 +1411,7 @@ fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

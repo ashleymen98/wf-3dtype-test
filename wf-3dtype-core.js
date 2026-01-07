@@ -1908,12 +1908,16 @@ function playAnimation() {
       members,
     }));
 
+  // Flatten once for collision pass
+  const flatMembers = [];
+  for (const p of proxies) for (const m of p.members) flatMembers.push(m);
+
   const rotRad = THREE.MathUtils.degToRad(Number(params.animRotateDeg || 35));
   const inflateAmt = Number(params.animInflate || 0.18);
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
 
   // ------------------------------------------------------------
-  // Explode tuning (v14 + impact + holds + easing + rot variance)
+  // Explode tuning (v14)
   // ------------------------------------------------------------
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
 
@@ -1921,9 +1925,7 @@ function playAnimation() {
   const exDY = Math.max(0.01, Number(params.animExplodeDiameterY ?? 1));
   const exD = Math.max(0.0, Number(params.animExplodeDiameter ?? 1.0)); // master
 
-  // IMPORTANT: normalize shape names so your dropdown ALWAYS maps
-  const exShapeRaw = String(params.animExplodeShape || "burst");
-  const exShape = exShapeRaw.replace(/\s+/g, "").toLowerCase(); // "Line X" -> "linex"
+  const exShape = String(params.animExplodeShape || "burst").toLowerCase();
   const exRingAng = THREE.MathUtils.degToRad(Number(params.animExplodeRingAngle ?? 0));
   const exNoise = clamp01(Number(params.animExplodeNoise ?? 0.15));
 
@@ -1935,20 +1937,12 @@ function playAnimation() {
   const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22)); // thin extrusion during explode
 
   const exRotAxisBase = String(params.animExplodeRotAxis || "z").toLowerCase();
+  const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
   const exRandDir = !!params.animExplodeRandomDir;
 
-  // NEW: rotation variation (min/max degrees)
-  const exRotMinDeg = Number(params.animExplodeRotMinDeg ?? (params.animExplodeRotDeg ?? 55));
-  const exRotMaxDeg = Number(params.animExplodeRotMaxDeg ?? (params.animExplodeRotDeg ?? 55));
-
-  // NEW: explode OUT/RETURN eases + hold times
-  const exEaseOut = String(params.animExplodeEaseOut || "expo.out");
-  const exEaseIn = String(params.animExplodeEaseIn || "expo.in");
-  const exHold = Math.max(0, Number(params.animExplodeHold ?? 0));         // seconds pause at full explode
-  const exReturnHold = Math.max(0, Number(params.animExplodeReturnHold ?? 0)); // seconds pause after return
-  const exReturn = params.animExplodeReturn == null ? true : !!params.animExplodeReturn;
-
-  // Impact-style explode (existing)
+  // ------------------------------------------------------------
+  // Impact-style explode (NEW)
+  // ------------------------------------------------------------
   const exImpactOn = !!params.animExplodeImpactOn;
   const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back
   const exImplode = !!params.animExplodeImplode;
@@ -1961,177 +1955,397 @@ function playAnimation() {
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
   // ------------------------------------------------------------
-  // Helpers (local, safe)
+  // Anti-clipping options (A + C)
+  // ------------------------------------------------------------
+  // A) micro scale-down during explode (helps reduce visible intersections)
+  const exClipScaleDown = clamp01(Number(params.animExplodeClipScaleDown ?? 0.08)); // 0..1 (recommend 0.05-0.15)
+
+  // C) 2D collision only during explode (uses your existing Collisions UI)
+  const colOn = !!params.collideOn;
+  const colPad = Number(params.collidePadding ?? 6);
+  const colStrength = Math.max(0, Number(params.collideStrength ?? 0.8));
+  const colIters = Math.max(0, Number(params.collideIters ?? 2));
+  const colMaxShift = Math.max(0, Number(params.collideMaxShift ?? 60));
+  const colUseGrid = !!params.collideGrid;
+
+  // ------------------------------------------------------------
+  // Helpers (local)
   // ------------------------------------------------------------
   function smooth01(t) {
     t = clamp01(t);
     return t * t * (3 - 2 * t);
   }
 
-  function lerp(a, b, t) {
-    return a + (b - a) * t;
-  }
-
-  // stable 0..1 random from an integer seed (repeatable)
-  function stable01(seed) {
-    // xorshift-ish hash -> [0,1)
-    let x = (seed | 0) + 0x6D2B79F5;
-    x = Math.imul(x ^ (x >>> 15), 1 | x);
-    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  }
-
   function getGlyphXY(m) {
-    if (typeof m.layoutX === "number" && typeof m.layoutY === "number") return [m.layoutX, m.layoutY];
-    if (typeof m.baseX === "number" && typeof m.baseY === "number") return [m.baseX, m.baseY];
-    const px = m.pivot?.position?.x ?? 0;
-    const py = m.pivot?.position?.y ?? 0;
-    return [px, py];
+    // assumes baseX/baseY as you confirmed
+    const gx = typeof m.baseX === "number" ? m.baseX : 0;
+    const gy = typeof m.baseY === "number" ? m.baseY : 0;
+    return [gx, gy];
   }
 
-  function applyProxy(p) {
-    for (const m of p.members) {
-      let ox = 0, oy = 0, oz = 0;
-      let arx = 0, ary = 0, arz = 0;
-      let asc = 1;
+  function approxGlyphRadius(m) {
+    // cheap + stable: derived from type size, slightly varied by per-letter scale
+    const size = Number(params.size ?? 64);
+    const base = Math.max(2, size * 0.32); // circle radius for a “typical” glyph
+    const s = typeof m.animScale === "number" ? m.animScale : 1;
+    return base * s + colPad;
+  }
+
+  // ------------------------------------------------------------
+  // Two-phase application: compute -> collide -> apply
+  // ------------------------------------------------------------
+  function computePerGlyph(p, m) {
+    let ox = 0,
+      oy = 0,
+      oz = 0;
+    let arx = 0,
+      ary = 0,
+      arz = 0;
+    let asc = 1;
+
+    // ---------------------------
+    // Explode (upgraded + impact)
+    // ---------------------------
+    if (p.ex && p.ex !== 0) {
+      const a0 = (m._expU || 0) + exAng;
+
+      let dx = Math.cos(a0);
+      let dy = Math.sin(a0);
+
+      const n = 1 + (m._spinJitter || 0) * exNoise;
+
+      let sx = exDX * exD * n;
+      let sy = exDY * exD * n;
+
+      const zSeed = m._expZ || 0;
+
+      // stable Z layering during explode (reduces clipping)
+      m.explodeZLift = zSeed * exZLift * p.ex;
+      if (p.z0 == null) p.z0 = p.z || 0;
 
       // ---------------------------
-      // Explode (upgraded + impact)
+      // Impact field
       // ---------------------------
-      if (p.ex && p.ex !== 0) {
-        const a0 = (m._expU || 0) + exAng;
+      let impactMul = 1;
+      let impactZ = 0;
 
-        let dx = Math.cos(a0);
-        let dy = Math.sin(a0);
+      if (exImpactOn) {
+        const [gx, gy] = getGlyphXY(m);
 
-        const n = 1 + (m._spinJitter || 0) * exNoise;
+        const cx = (exImpactX || 0) * exImpactRadius;
+        const cy = (exImpactY || 0) * exImpactRadius;
 
-        let sx = exDX * exD * n;
-        let sy = exDY * exD * n;
+        const ddx = gx - cx;
+        const ddy = gy - cy;
+        const dist = Math.hypot(ddx, ddy);
 
-        const zSeed = m._expZ || 0;
+        const t = 1 - dist / exImpactRadius;
+        const prox = smooth01(t);
+        const impulse = Math.pow(prox, exImpactFalloff) * exImpactStrength;
 
-        // stable Z layering during explode (reduces clipping)
-        m.explodeZLift = zSeed * exZLift * p.ex;
-        if (p.z0 == null) p.z0 = p.z || 0;
+        impactMul = 1 + exImpactRadialBoost * impulse;
 
-        // NEW: Impact field (mass hits from front/back)
-        let impactMul = 1;
-        let impactZ = 0;
-
-        if (exImpactOn) {
-          const [gx, gy] = getGlyphXY(m);
-
-          const cx = (exImpactX || 0) * exImpactRadius;
-          const cy = (exImpactY || 0) * exImpactRadius;
-
-          const ddx = gx - cx;
-          const ddy = gy - cy;
-          const dist = Math.hypot(ddx, ddy);
-
-          const t = 1 - dist / exImpactRadius;
-          const prox = smooth01(t);
-
-          const impulse = Math.pow(prox, exImpactFalloff) * exImpactStrength;
-
-          impactMul = 1 + exImpactRadialBoost * impulse;
-
-          const dirZ = exImpactDir === "back" ? 1 : -1;
-          impactZ = dirZ * exImpactZPush * impulse;
-        }
-
-        // -------------------------------------------------
-        // Shape controls (these SHOULD look different)
-        // -------------------------------------------------
-        if (exShape === "ring") {
-          const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
-          const rx2 = dx * c - dy * s;
-          const ry2 = dx * s + dy * c;
-          dx = rx2; dy = ry2;
-
-          // ring == keep XY, but a bit less noisy Z unless user adds it
-          // (still allows exZ + impactZ)
-        } else if (exShape === "sphere") {
-          // sphere adds Z dispersion on top of existing exZ + impactZ
-          oz += zSeed * (explodeAmt * exZSpread) * p.ex;
-        } else if (exShape === "linex") {
-          dx = Math.sign(dx || 1);
-          dy = 0;
-          sy = 0; // kill Y
-        } else if (exShape === "liney") {
-          dx = 0;
-          dy = Math.sign(dy || 1);
-          sx = 0; // kill X
-        } else {
-          // "burst" -> default (dx,dy already radial)
-        }
-
-        // Apply explode with impact feel
-        const inOut = exImplode ? -1 : 1;
-
-        ox += dx * explodeAmt * sx * p.ex * impactMul * inOut;
-        oy += dy * explodeAmt * sy * p.ex * impactMul * inOut;
-
-        oz += zSeed * exZ * p.ex;
-        oz += impactZ * p.ex;
-
-        // per-char rotation on chosen/random axis + NEW min/max variance
-        let ax = exRotAxisBase;
-        if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
-
-        const sign = stablePickSign(m.overlayIndex || 0, exRandDir);
-        const r01 = stable01((m.overlayIndex || 0) + 1337);
-        const rDeg = lerp(exRotMinDeg, exRotMaxDeg, r01);
-        const r = THREE.MathUtils.degToRad(rDeg) * sign * p.ex;
-
-        if (ax === "x") arx += r;
-        else if (ax === "y") ary += r;
-        else arz += r;
-      } else {
-        m.explodeZLift = 0;
+        const dirZ = exImpactDir === "back" ? 1 : -1;
+        impactZ = dirZ * exImpactZPush * impulse;
       }
 
       // ---------------------------
-      // Shared proxy transforms
+      // Shape controls
       // ---------------------------
-      arx += p.rx || 0;
-      ary += p.ry || 0;
-      arz += p.rz || 0;
+      if (exShape === "ring") {
+        const c = Math.cos(exRingAng),
+          s = Math.sin(exRingAng);
+        const rx2 = dx * c - dy * s;
+        const ry2 = dx * s + dy * c;
+        dx = rx2;
+        dy = ry2;
+      } else if (exShape === "sphere") {
+        oz += zSeed * (explodeAmt * exZSpread) * p.ex;
+      } else if (exShape === "linex") {
+        dx = Math.sign(dx || 1);
+        dy = 0;
+        sy = 0;
+      } else if (exShape === "liney") {
+        dx = 0;
+        dy = Math.sign(dy || 1);
+        sx = 0;
+      }
 
-      asc *= p.s || 1;
+      // ---------------------------
+      // Apply explode
+      // ---------------------------
+      const inOut = exImplode ? -1 : 1;
 
-      m.animOffsetX = ox;
-      m.animOffsetY = oy;
-      m.animOffsetZ = oz;
+      ox += dx * explodeAmt * sx * p.ex * impactMul * inOut;
+      oy += dy * explodeAmt * sy * p.ex * impactMul * inOut;
 
-      m.animRotX = arx;
-      m.animRotY = ary;
-      m.animRotZ = arz;
+      oz += zSeed * exZ * p.ex;
+      oz += impactZ * p.ex;
 
-      m.animScale = asc;
+      // per-char rotation on chosen/random axis
+      let ax = exRotAxisBase;
+      if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
+      const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
+      const r = exRotRad * dir * p.ex;
 
-      m.pivot.rotation.x = (m.baseRotX || 0) + m.animRotX;
-      m.pivot.rotation.y = (m.baseRotY || 0) + m.animRotY;
-      m.pivot.rotation.z = (m.baseRotZ || 0) + m.animRotZ;
+      if (ax === "x") arx += r;
+      else if (ax === "y") ary += r;
+      else arz += r;
+    } else {
+      m.explodeZLift = 0;
+    }
 
-      const bsx = m.baseScaleX || 1;
-      const bsy = m.baseScaleY || 1;
-      const bsz = m.baseScaleZ || 1;
-      m.group.scale.set(bsx * m.animScale, bsy * m.animScale, bsz);
+    // ---------------------------
+    // Shared proxy transforms
+    // ---------------------------
+    arx += p.rx || 0;
+    ary += p.ry || 0;
+    arz += p.rz || 0;
 
-      m.explodeF = p.ex || 0;
+    asc *= p.s || 1;
 
-      // depth thinning during explode
-      const baseF = typeof p.f === "number" ? p.f : 1;
-      const thinMul = 1 - exDepthShrink * m.explodeF;
-      m.depthF = baseF * thinMul;
+    // A) scale-down while exploding
+    const explodeF = p.ex || 0;
+    asc *= 1 - exClipScaleDown * explodeF;
 
-      _updateDepth(m);
+    // Stash computed values for collision & apply pass
+    m.__tmpOx = ox;
+    m.__tmpOy = oy;
+    m.__tmpOz = oz;
+
+    m.__tmpArx = arx;
+    m.__tmpAry = ary;
+    m.__tmpArz = arz;
+
+    m.__tmpAsc = asc;
+
+    m.explodeF = explodeF;
+
+    // depth thinning during explode
+    const baseF = typeof p.f === "number" ? p.f : 1;
+    const thinMul = 1 - exDepthShrink * explodeF;
+    m.depthF = baseF * thinMul;
+
+    // also keep for any other logic downstream
+    m.animOffsetX = ox;
+    m.animOffsetY = oy;
+    m.animOffsetZ = oz;
+
+    m.animRotX = arx;
+    m.animRotY = ary;
+    m.animRotZ = arz;
+
+    m.animScale = asc;
+  }
+
+  function resolveExplodeCollisions2D() {
+    if (!colOn || colIters <= 0 || colStrength <= 0) return;
+
+    // Only run while *any* explode is active (saves perf)
+    let anyExploding = false;
+    for (let i = 0; i < flatMembers.length; i++) {
+      if ((flatMembers[i].explodeF || 0) > 0.001) {
+        anyExploding = true;
+        break;
+      }
+    }
+    if (!anyExploding) return;
+
+    // Prepare working positions (base + tmp offsets)
+    for (const m of flatMembers) {
+      const bx = typeof m.baseX === "number" ? m.baseX : 0;
+      const by = typeof m.baseY === "number" ? m.baseY : 0;
+
+      m.__colX = bx + (m.__tmpOx || 0);
+      m.__colY = by + (m.__tmpOy || 0);
+      m.__colR = approxGlyphRadius(m);
+
+      // reset accumulated shift each update
+      m.__colSX = 0;
+      m.__colSY = 0;
+    }
+
+    // Optional grid accel
+    let grid = null;
+    let cellSize = 1;
+
+    function buildGrid() {
+      // cell size based on typical radius
+      let rAvg = 0;
+      let n = 0;
+      for (const m of flatMembers) {
+        if ((m.explodeF || 0) <= 0.001) continue;
+        rAvg += m.__colR || 0;
+        n++;
+      }
+      rAvg = n ? rAvg / n : 20;
+      cellSize = Math.max(12, rAvg * 2);
+
+      grid = new Map();
+      for (let i = 0; i < flatMembers.length; i++) {
+        const m = flatMembers[i];
+        if ((m.explodeF || 0) <= 0.001) continue;
+
+        const cx = Math.floor((m.__colX || 0) / cellSize);
+        const cy = Math.floor((m.__colY || 0) / cellSize);
+        const key = cx + "," + cy;
+        const arr = grid.get(key);
+        if (arr) arr.push(i);
+        else grid.set(key, [i]);
+      }
+    }
+
+    function forNeighbors(i, fn) {
+      const m = flatMembers[i];
+      const cx = Math.floor((m.__colX || 0) / cellSize);
+      const cy = Math.floor((m.__colY || 0) / cellSize);
+
+      for (let gx = cx - 1; gx <= cx + 1; gx++) {
+        for (let gy = cy - 1; gy <= cy + 1; gy++) {
+          const arr = grid.get(gx + "," + gy);
+          if (!arr) continue;
+          for (let k = 0; k < arr.length; k++) fn(arr[k]);
+        }
+      }
+    }
+
+    for (let iter = 0; iter < colIters; iter++) {
+      if (colUseGrid) buildGrid();
+
+      for (let i = 0; i < flatMembers.length; i++) {
+        const a = flatMembers[i];
+        if ((a.explodeF || 0) <= 0.001) continue;
+
+        const ax = a.__colX || 0;
+        const ay = a.__colY || 0;
+        const ar = a.__colR || 10;
+
+        const visit = (j) => {
+          if (j <= i) return;
+          const b = flatMembers[j];
+          if ((b.explodeF || 0) <= 0.001) return;
+
+          const bx = b.__colX || 0;
+          const by = b.__colY || 0;
+          const br = b.__colR || 10;
+
+          const dx = bx - ax;
+          const dy = by - ay;
+          const d2 = dx * dx + dy * dy;
+          const minD = ar + br;
+
+          if (d2 >= minD * minD || d2 < 1e-9) return;
+
+          const d = Math.sqrt(d2);
+          const overlap = minD - d;
+
+          const nx = dx / d;
+          const ny = dy / d;
+
+          // split push between both
+          const push = overlap * 0.5 * colStrength;
+
+          a.__colSX -= nx * push;
+          a.__colSY -= ny * push;
+          b.__colSX += nx * push;
+          b.__colSY += ny * push;
+        };
+
+        if (colUseGrid && grid) {
+          forNeighbors(i, visit);
+        } else {
+          for (let j = i + 1; j < flatMembers.length; j++) visit(j);
+        }
+      }
+
+      // apply and clamp shifts
+      for (const m of flatMembers) {
+        if ((m.explodeF || 0) <= 0.001) continue;
+
+        let sx = m.__colSX || 0;
+        let sy = m.__colSY || 0;
+
+        // clamp
+        const mag = Math.hypot(sx, sy);
+        if (mag > colMaxShift && mag > 1e-6) {
+          const k = colMaxShift / mag;
+          sx *= k;
+          sy *= k;
+        }
+
+        m.__colX = (m.__colX || 0) + sx;
+        m.__colY = (m.__colY || 0) + sy;
+
+        // clear accumulators for next iter
+        m.__colSX = 0;
+        m.__colSY = 0;
+      }
+    }
+
+    // Write collision-adjusted offsets back into tmp offsets
+    for (const m of flatMembers) {
+      if ((m.explodeF || 0) <= 0.001) continue;
+
+      const bx = typeof m.baseX === "number" ? m.baseX : 0;
+      const by = typeof m.baseY === "number" ? m.baseY : 0;
+
+      const adjX = (m.__colX || 0) - bx;
+      const adjY = (m.__colY || 0) - by;
+
+      m.__tmpOx = adjX;
+      m.__tmpOy = adjY;
+
+      m.animOffsetX = adjX;
+      m.animOffsetY = adjY;
     }
   }
 
+  function applyToScene(m) {
+    // Rot / scale
+    m.pivot.rotation.x = (m.baseRotX || 0) + (m.__tmpArx || 0);
+    m.pivot.rotation.y = (m.baseRotY || 0) + (m.__tmpAry || 0);
+    m.pivot.rotation.z = (m.baseRotZ || 0) + (m.__tmpArz || 0);
+
+    const bsx = m.baseScaleX || 1;
+    const bsy = m.baseScaleY || 1;
+    const bsz = m.baseScaleZ || 1;
+    const s = m.__tmpAsc || 1;
+    m.group.scale.set(bsx * s, bsy * s, bsz);
+
+    // Position (ASSUMED: baseX/baseY + pivot.position)
+    const bx = typeof m.baseX === "number" ? m.baseX : 0;
+    const by = typeof m.baseY === "number" ? m.baseY : 0;
+    const bz = typeof m.baseZ === "number" ? m.baseZ : 0;
+
+    const ox = m.__tmpOx || 0;
+    const oy = m.__tmpOy || 0;
+    const oz = (m.__tmpOz || 0) + (m.explodeZLift || 0);
+
+    m.pivot.position.x = bx + ox;
+    m.pivot.position.y = by + oy;
+    m.pivot.position.z = bz + oz;
+
+    _updateDepth(m);
+  }
+
+  function applyAll() {
+    // Phase 1: compute
+    for (const p of proxies) {
+      for (const m of p.members) computePerGlyph(p, m);
+    }
+
+    // Phase 2: collide (only affects XY during explode)
+    resolveExplodeCollisions2D();
+
+    // Phase 3: apply
+    for (let i = 0; i < flatMembers.length; i++) applyToScene(flatMembers[i]);
+
+    // keep your per-letter Z offsets behavior
+    _applyCharZOffsetsFromParams();
+  }
+
   // Apply once immediately so the initial state matches params
-  for (const p of proxies) applyProxy(p);
+  applyAll();
 
   const preset = (params.animPreset || "depth").toLowerCase();
   const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
@@ -2139,16 +2353,15 @@ function playAnimation() {
   const tweenVars = {
     duration,
     stagger: { each: stagger, from: params.animStaggerFrom },
-    onUpdate: () => {
-      for (const p of proxies) applyProxy(p);
-      _applyCharZOffsetsFromParams();
-    },
+    onUpdate: applyAll,
   };
 
   // Reset proxy channels
   for (const p of proxies) {
     p.f = alsoDepth ? minF : undefined;
-    p.rx = 0; p.ry = 0; p.rz = 0;
+    p.rx = 0;
+    p.ry = 0;
+    p.rz = 0;
     p.s = 1;
     p.ex = 0;
   }
@@ -2156,13 +2369,12 @@ function playAnimation() {
   const axis = (params.animAxis || "y").toLowerCase();
   const depthTarget = maxF;
 
-  if (tl) { tl.kill(); tl = null; }
+  if (tl) {
+    tl.kill();
+    tl = null;
+  }
 
-  // ------------------------------------------------------------
-  // Timeline routing
-  // ------------------------------------------------------------
   if (preset === "blast") {
-    // unchanged (your blast logic)
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
     tl.to(
@@ -2188,37 +2400,7 @@ function playAnimation() {
         ">-0.05"
       );
     }
-
-  } else if (preset === "explode") {
-    // NEW: explode is OUT -> HOLD -> (optional) RETURN -> HOLD
-    tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
-
-    // OUT
-    {
-      const vars = { ...tweenVars, ease: exEaseOut, ex: 1 };
-      if (alsoDepth) vars.f = depthTarget;
-      tl.to(proxies, vars, 0);
-    }
-
-    // HOLD at full explode
-    if (exHold > 0) {
-      tl.to({}, { duration: exHold }, ">");
-    }
-
-    // RETURN
-    if (exReturn) {
-      const vars = { ...tweenVars, ease: exEaseIn, ex: 0 };
-      if (alsoDepth) vars.f = minF;
-      tl.to(proxies, vars, ">");
-    }
-
-    // HOLD after return (before repeating)
-    if (exReturnHold > 0) {
-      tl.to({}, { duration: exReturnHold }, ">");
-    }
-
   } else {
-    // Default presets use yoyo (unchanged)
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
 
     if (preset === "depth") {
@@ -2243,11 +2425,17 @@ function playAnimation() {
       else vars.rz = spinRad;
       if (alsoDepth) vars.f = depthTarget;
       tl.to(proxies, vars, 0);
+
+    } else if (preset === "explode") {
+      const vars = { ...tweenVars, ease, ex: 1 };
+      if (alsoDepth) vars.f = depthTarget;
+      tl.to(proxies, vars, 0);
     }
   }
 }
 
 window.playAnimation = playAnimation;
+
 
 
 
@@ -3077,6 +3265,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

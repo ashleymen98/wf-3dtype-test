@@ -102,6 +102,10 @@
       // ---------------------------
       // SAFE DEFAULTS
       // ---------------------------
+      ensureParam(params, "animExplodeClipScaleDown", 0.08);
+
+
+      
       ensureParam(params, "animExplodeDepthShrink", 0.22);
 
       ensureParam(params, "bgMode", "solid");
@@ -1023,6 +1027,14 @@ fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
   step: 0.01,
 });
 
+      fExplode.addBinding(params, "animExplodeClipScaleDown", {
+  label: "clip scale",
+  min: 0,
+  max: 0.25,
+  step: 0.005,
+});
+
+
       // NEW: hold + easing + return
 fExplode.addBinding(params, "animExplodeHold", { label: "hold (s)", min: 0, max: 2, step: 0.01 });
 fExplode.addBinding(params, "animExplodeEaseOut", {
@@ -1411,6 +1423,7 @@ fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

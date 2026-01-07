@@ -1846,35 +1846,59 @@ function stopAnimation() {
     tl.kill();
     tl = null;
   }
-  for (const g of glyphs) {
-    g.depthF = 1;
-   const bx = (g.baseGroupX || 0) + (g.animOffsetX || 0);
-const by = (g.baseGroupY || 0) + (g.animOffsetY || 0);
-g._tx = bx;
-g._ty = by;
 
-    g.animOffsetX = 0;
-    g.animOffsetY = 0;
-    g.animOffsetZ = 0;
-    g.animRotX = 0;
-    g.animRotY = 0;
-    g.animRotZ = 0;
-    g.animScale = 1;
+  // Reset all glyphs back to their cached "rest" layout positions
+  // (set during playAnimation() at the moment you hit Play)
+  for (const m of glyphs) {
+    if (!m || !m.pivot || !m.group) continue;
 
-   g.pivot.rotation.x = g.baseRotX || 0;
-g.pivot.rotation.y = g.baseRotY || 0;
-g.pivot.rotation.z = g.baseRotZ || 0;
-g.group.rotation.set(0,0,0);
-g.pivot.rotation.set(g.baseRotX||0, g.baseRotY||0, g.baseRotZ||0);
+    // Restore position
+    if (typeof m.__animBasePosX === "number") m.pivot.position.x = m.__animBasePosX;
+    if (typeof m.__animBasePosY === "number") m.pivot.position.y = m.__animBasePosY;
+    if (typeof m.__animBasePosZ === "number") m.pivot.position.z = m.__animBasePosZ;
 
-    g.group.scale.set(g.baseScaleX || 1, g.baseScaleY || 1, g.baseScaleZ || 1);
+    // Clear any explode lift / offsets
+    m.explodeZLift = 0;
+    m.explodeF = 0;
 
-    _updateDepth(g);
+    m.__tmpOx = 0; m.__tmpOy = 0; m.__tmpOz = 0;
+    m.animOffsetX = 0; m.animOffsetY = 0; m.animOffsetZ = 0;
+
+    // Restore rotations to base
+    m.__tmpArx = 0; m.__tmpAry = 0; m.__tmpArz = 0;
+    m.animRotX = 0; m.animRotY = 0; m.animRotZ = 0;
+
+    m.pivot.rotation.x = (m.baseRotX || 0);
+    m.pivot.rotation.y = (m.baseRotY || 0);
+    m.pivot.rotation.z = (m.baseRotZ || 0);
+
+    // Restore scale to base
+    m.__tmpAsc = 1;
+    m.animScale = 1;
+
+    const bsx = m.baseScaleX || 1;
+    const bsy = m.baseScaleY || 1;
+    const bsz = m.baseScaleZ || 1;
+    m.group.scale.set(bsx, bsy, bsz);
+
+    // Restore depth factor to "not animating"
+    m.depthF = 1;
+    _updateDepth(m);
+
+    // ✅ IMPORTANT: clear cached base so next Play always captures fresh layout
+    delete m.__animBasePosX;
+    delete m.__animBasePosY;
+    delete m.__animBasePosZ;
   }
-  
-  _applyCharZOffsetsFromParams();
+
+  // Keep Z-offset system consistent with UI params (if you use it)
+  try {
+    _applyCharZOffsetsFromParams();
+  } catch (e) {}
 }
+
 window.stopAnimation = stopAnimation;
+
 
 function playAnimation() {
   if (!gsap || !glyphs.length) return;
@@ -3218,6 +3242,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

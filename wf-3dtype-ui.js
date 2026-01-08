@@ -103,6 +103,8 @@
       // SAFE DEFAULTS
       // ---------------------------
       ensureParam(params, "animExplodeClipScaleDown", 0.08);
+      ensureParam(params, "animExplodeImpactPreset", "center"); // center|tl|tr|bl|br
+
 
 
       
@@ -990,6 +992,39 @@ fExplode.addBinding(params, "animExplodeShape", {
 });
 fExplode.addBinding(params, "animExplodeRingAngle", { label: "ring angle", min: 0, max: 360, step: 1 });
 
+
+fExplode.addBinding(params, "animExplodeImpactPreset", {
+  label: "impact preset",
+  options: {
+    Center: "center",
+    "Top Left": "tl",
+    "Top Right": "tr",
+    "Bottom Left": "bl",
+    "Bottom Right": "br",
+  },
+}).on("change", () => {
+  const p = params.animExplodeImpactPreset;
+
+  // normalized -1..1 space
+  const map = {
+    center: [0, 0],
+    tl: [-0.8, -0.8],
+    tr: [0.8, -0.8],
+    bl: [-0.8, 0.8],
+    br: [0.8, 0.8],
+  };
+
+  const v = map[p] || [0, 0];
+  params.animExplodeImpactX = v[0];
+  params.animExplodeImpactY = v[1];
+
+  // keep UI in sync
+  pane.refresh();
+
+  if (window.__tp_animPlaying) window.playAnimation();
+});
+
+
 // Z controls
 fExplode.addBinding(params, "animExplodeZAmount", { label: "Z amt", min: -400, max: 400, step: 1 });
 fExplode.addBinding(params, "animExplodeZSpread", { label: "Z spread", min: 0, max: 2, step: 0.01 });
@@ -1012,7 +1047,15 @@ fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, 
 // Impact (mass hit)
 const fImpact = fExplode.addFolder({ title: "Impact" });
 fImpact.addBinding(params, "animExplodeImpactOn", { label: "enabled" });
-fImpact.addBinding(params, "animExplodeImpactDir", { label: "dir", options: { Front: "front", Back: "back" } });
+fImpact.addBinding(params, "animExplodeImpactDir", {
+  label: "dir",
+  options: {
+    Front: "front",
+    Back: "back",
+    Left: "left",
+    Right: "right",
+  },
+});
 fImpact.addBinding(params, "animExplodeImplode", { label: "implode" });
 
 fImpact.addBinding(params, "animExplodeImpactStrength", { label: "strength", min: 0, max: 3, step: 0.01 });
@@ -1420,6 +1463,7 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

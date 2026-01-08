@@ -1905,57 +1905,17 @@ window.stopAnimation = stopAnimation;
 function playAnimation() {
   if (!gsap || !glyphs.length) return;
 
-  const wasRunning = !!tl;
-  if (tl) {
-    tl.kill();
-    tl = null;
-  }
-
-  // ------------------------------------------------------------
-  // ✅ FIX 1: If we are restarting while already playing (usually due to UI tweaks),
-  // snap everyone back to the true layout BEFORE we (re)cache base positions.
-  // This prevents "random new home positions" after editing explode params mid-play.
-  // Assumption per you: baseX/baseY exists; fallback to current pivot if not.
-  // ------------------------------------------------------------
-  if (wasRunning) {
-    for (const m of glyphs) {
-      if (!m || !m.pivot || !m.group) continue;
-
-      const lx = (typeof m.baseX === "number") ? m.baseX : (m.pivot.position?.x ?? 0);
-      const ly = (typeof m.baseY === "number") ? m.baseY : (m.pivot.position?.y ?? 0);
-      const lz = (typeof m.baseZ === "number") ? m.baseZ : (m.pivot.position?.z ?? 0);
-
-      m.pivot.position.x = lx;
-      m.pivot.position.y = ly;
-      m.pivot.position.z = lz;
-
-      // Clear anim residue so next cache is clean
-      m.explodeZLift = 0;
-      m.explodeF = 0;
-
-      m.__tmpOx = 0; m.__tmpOy = 0; m.__tmpOz = 0;
-      m.animOffsetX = 0; m.animOffsetY = 0; m.animOffsetZ = 0;
-
-      m.__tmpArx = 0; m.__tmpAry = 0; m.__tmpArz = 0;
-      m.animRotX = 0; m.animRotY = 0; m.animRotZ = 0;
-
-      m.pivot.rotation.x = (m.baseRotX || 0);
-      m.pivot.rotation.y = (m.baseRotY || 0);
-      m.pivot.rotation.z = (m.baseRotZ || 0);
-
-      m.__tmpAsc = 1;
-      m.animScale = 1;
-
-      const bsx = m.baseScaleX || 1;
-      const bsy = m.baseScaleY || 1;
-      const bsz = m.baseScaleZ || 1;
-      m.group.scale.set(bsx, bsy, bsz);
-
-      m.depthF = 1;
-      _updateDepth(m);
+  // ✅ CRITICAL: if something is already playing, fully reset back to the true
+  // “static/layout” positions BEFORE we cache bases again.
+  // This prevents “random drifting” when you tweak explode params mid-play.
+  try {
+    window.stopAnimation?.();
+  } catch (e) {
+    // fallback: at least kill timeline
+    if (tl) {
+      tl.kill();
+      tl = null;
     }
-
-    try { _applyCharZOffsetsFromParams(); } catch (e) {}
   }
 
   const duration = Number(params.animSpeed || 1.2);
@@ -1966,6 +1926,7 @@ function playAnimation() {
   const minF = Math.max(0, Number(params.animMinPct || 0) / 100);
   const maxF = Math.max(0, Number(params.animMaxPct || 100) / 100);
 
+  // Grouping
   let groups = [];
   if (params.animStaggerMode === "word") groups = wordGroups;
   else if (params.animStaggerMode === "line") groups = lineGroups;
@@ -1983,21 +1944,16 @@ function playAnimation() {
       members,
     }));
 
-  // Flatten once for collision pass
+  // Flatten once (used for collision + applying)
   const flatMembers = [];
   for (const p of proxies) for (const m of p.members) flatMembers.push(m);
 
-  // ------------------------------------------------------------
-  // ✅ FIX 2: Cache base/rest positions ONLY ONCE per "play session"
-  // If we are re-playing because params changed while playing, we DO NOT
-  // overwrite cached bases with mid-explosion positions.
-  // ------------------------------------------------------------
+  // Cache the “rest” layout position at the moment Play is pressed
   for (const m of flatMembers) {
-    if (!m || !m.pivot) continue;
-
-    if (typeof m.__animBasePosX !== "number") m.__animBasePosX = m.pivot.position.x;
-    if (typeof m.__animBasePosY !== "number") m.__animBasePosY = m.pivot.position.y;
-    if (typeof m.__animBasePosZ !== "number") m.__animBasePosZ = m.pivot.position.z;
+    if (!m?.pivot) continue;
+    m.__animBasePosX = m.pivot.position.x;
+    m.__animBasePosY = m.pivot.position.y;
+    m.__animBasePosZ = m.pivot.position.z;
   }
 
   const rotRad = THREE.MathUtils.degToRad(Number(params.animRotateDeg || 35));
@@ -2005,15 +1961,15 @@ function playAnimation() {
   const spinRad = THREE.MathUtils.degToRad(Number(params.animSpinDeg ?? 360));
 
   // ------------------------------------------------------------
-  // Explode tuning (v14)
+  // Explode tuning
   // ------------------------------------------------------------
   const explodeAmt = Number(params.animExplodeAmount ?? 220);
 
   const exDX = Math.max(0.01, Number(params.animExplodeDiameterX ?? 1));
   const exDY = Math.max(0.01, Number(params.animExplodeDiameterY ?? 1));
-  const exD = Math.max(0.0, Number(params.animExplodeDiameter ?? 1.0)); // master
+  const exD = Math.max(0.0, Number(params.animExplodeDiameter ?? 1.0));
 
-  const exShape = String(params.animExplodeShape || "burst").toLowerCase();
+  const exShape = String(params.animExplodeShape || "burst").toLowerCase(); // burst|ring|sphere|linex|liney
   const exRingAng = THREE.MathUtils.degToRad(Number(params.animExplodeRingAngle ?? 0));
   const exNoise = clamp01(Number(params.animExplodeNoise ?? 0.15));
 
@@ -2024,30 +1980,44 @@ function playAnimation() {
   const exZLift = Number(params.animExplodeZLift ?? 28);
   const exDepthShrink = clamp01(Number(params.animExplodeDepthShrink ?? 0.22));
 
+  // Rotation axis + variance
   const exRotAxisBase = String(params.animExplodeRotAxis || "z").toLowerCase();
-  const exRotRad = THREE.MathUtils.degToRad(Number(params.animExplodeRotDeg ?? 55));
   const exRandDir = !!params.animExplodeRandomDir;
 
-  // ------------------------------------------------------------
-  // Impact-style explode
-  // ------------------------------------------------------------
+  // If you have rot min/max, use them; otherwise fall back to legacy rot deg
+  const hasMinMax =
+    typeof params.animExplodeRotMinDeg === "number" ||
+    typeof params.animExplodeRotMaxDeg === "number";
+  const rotMinDeg = Number(params.animExplodeRotMinDeg ?? params.animExplodeRotDeg ?? 55);
+  const rotMaxDeg = Number(params.animExplodeRotMaxDeg ?? params.animExplodeRotDeg ?? 55);
+  const exRotMinRad = THREE.MathUtils.degToRad(Math.min(rotMinDeg, rotMaxDeg));
+  const exRotMaxRad = THREE.MathUtils.degToRad(Math.max(rotMinDeg, rotMaxDeg));
+
+  // Impact
   const exImpactOn = !!params.animExplodeImpactOn;
   const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back
   const exImplode = !!params.animExplodeImplode;
+
   const exImpactStrength = Number(params.animExplodeImpactStrength ?? 1.0);
   const exImpactRadius = Math.max(1, Number(params.animExplodeImpactRadius ?? 260));
   const exImpactFalloff = Math.max(0.01, Number(params.animExplodeImpactFalloff ?? 2.2));
-  const exImpactX = Number(params.animExplodeImpactX ?? 0); // -1..1
-  const exImpactY = Number(params.animExplodeImpactY ?? 0); // -1..1
+  const exImpactX = Number(params.animExplodeImpactX ?? 0);
+  const exImpactY = Number(params.animExplodeImpactY ?? 0);
   const exImpactZPush = Number(params.animExplodeImpactZPush ?? 160);
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
-  // ------------------------------------------------------------
-  // Anti-clipping options (A + C)
-  // ------------------------------------------------------------
+  // OUT/RETURN timing + easing (explode only)
+  const exHold = Math.max(0, Number(params.animExplodeHold ?? 0.0));
+  const exReturn = !!params.animExplodeReturn;
+  const exReturnHold = Math.max(0, Number(params.animExplodeReturnHold ?? 0.0));
+  const exEaseOut = String(params.animExplodeEaseOut || "expo.out");
+  const exEaseIn = String(params.animExplodeEaseIn || "expo.in");
+
+  // Optional clip-scale
+  const exClipScaleOn = !!params.animExplodeClipScaleOn;
   const exClipScaleDown = clamp01(Number(params.animExplodeClipScaleDown ?? 0.08));
 
-  // C) 2D collision only during explode (uses your existing Collisions UI)
+  // Collision (reuse your Collisions UI as an explode-only “separation pass”)
   const colOn = !!params.collideOn;
   const colPad = Number(params.collidePadding ?? 6);
   const colStrength = Math.max(0, Number(params.collideStrength ?? 0.8));
@@ -2063,7 +2033,12 @@ function playAnimation() {
     return t * t * (3 - 2 * t);
   }
 
-  // Use cached base positions for "layout space"
+  function stableRand01(seed) {
+    // cheap deterministic [0..1)
+    const x = Math.sin(seed * 999.123 + 1.2345) * 43758.5453123;
+    return x - Math.floor(x);
+  }
+
   function getGlyphXY(m) {
     const gx = typeof m.__animBasePosX === "number" ? m.__animBasePosX : (m.pivot?.position?.x ?? 0);
     const gy = typeof m.__animBasePosY === "number" ? m.__animBasePosY : (m.pivot?.position?.y ?? 0);
@@ -2078,7 +2053,7 @@ function playAnimation() {
   }
 
   // ------------------------------------------------------------
-  // Two-phase application: compute -> collide -> apply
+  // Two-phase: compute -> collide -> apply
   // ------------------------------------------------------------
   function computePerGlyph(p, m) {
     let ox = 0, oy = 0, oz = 0;
@@ -2092,12 +2067,10 @@ function playAnimation() {
       let dy = Math.sin(a0);
 
       const n = 1 + (m._spinJitter || 0) * exNoise;
-
       let sx = exDX * exD * n;
       let sy = exDY * exD * n;
 
       const zSeed = m._expZ || 0;
-
       m.explodeZLift = zSeed * exZLift * p.ex;
 
       // Impact field
@@ -2124,19 +2097,24 @@ function playAnimation() {
         impactZ = dirZ * exImpactZPush * impulse;
       }
 
-      // Shape controls
+      // Shape
       if (exShape === "ring") {
         const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
         const rx2 = dx * c - dy * s;
         const ry2 = dx * s + dy * c;
         dx = rx2; dy = ry2;
       } else if (exShape === "sphere") {
+        // sphere adds Z spread in addition to XY burst
         oz += zSeed * (explodeAmt * exZSpread) * p.ex;
       } else if (exShape === "linex") {
-        dx = Math.sign(dx || 1); dy = 0; sy = 0;
+        dx = Math.sign(dx || 1);
+        dy = 0;
+        sy = 0;
       } else if (exShape === "liney") {
-        dx = 0; dy = Math.sign(dy || 1); sx = 0;
-      }
+        dx = 0;
+        dy = Math.sign(dy || 1);
+        sx = 0;
+      } // burst = default (radial)
 
       const inOut = exImplode ? -1 : 1;
 
@@ -2146,11 +2124,16 @@ function playAnimation() {
       oz += zSeed * exZ * p.ex;
       oz += impactZ * p.ex;
 
-      // per-char rotation on chosen/random axis
+      // Rotation with variance
       let ax = exRotAxisBase;
       if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
+
       const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
-      const r = exRotRad * dir * p.ex;
+
+      // magnitude in [min..max] (or legacy deg if min/max match)
+      const t = stableRand01((m.overlayIndex || 0) + 17.17);
+      const mag = exRotMinRad + (exRotMaxRad - exRotMinRad) * t;
+      const r = mag * dir * p.ex;
 
       if (ax === "x") arx += r;
       else if (ax === "y") ary += r;
@@ -2167,9 +2150,11 @@ function playAnimation() {
     asc *= p.s || 1;
 
     const explodeF = p.ex || 0;
-    asc *= 1 - exClipScaleDown * explodeF;
 
-    // Stash
+    // optional clip-scale
+    if (exClipScaleOn) asc *= 1 - exClipScaleDown * explodeF;
+
+    // stash tmp
     m.__tmpOx = ox;
     m.__tmpOy = oy;
     m.__tmpOz = oz;
@@ -2182,11 +2167,12 @@ function playAnimation() {
 
     m.explodeF = explodeF;
 
+    // depth thinning during explode
     const baseF = typeof p.f === "number" ? p.f : 1;
     const thinMul = 1 - exDepthShrink * explodeF;
     m.depthF = baseF * thinMul;
 
-    // keep for other systems
+    // keep compatibility
     m.animOffsetX = ox;
     m.animOffsetY = oy;
     m.animOffsetZ = oz;
@@ -2199,6 +2185,7 @@ function playAnimation() {
   }
 
   function resolveExplodeCollisions2D() {
+    // Only run if collisions are enabled AND something is exploding
     if (!colOn || colIters <= 0 || colStrength <= 0) return;
 
     let anyExploding = false;
@@ -2207,7 +2194,7 @@ function playAnimation() {
     }
     if (!anyExploding) return;
 
-    // Working positions (cached base + tmp offsets)
+    // working positions = base + tmp offsets
     for (const m of flatMembers) {
       const bx = typeof m.__animBasePosX === "number" ? m.__animBasePosX : (m.pivot?.position?.x ?? 0);
       const by = typeof m.__animBasePosY === "number" ? m.__animBasePosY : (m.pivot?.position?.y ?? 0);
@@ -2346,6 +2333,8 @@ function playAnimation() {
   }
 
   function applyToScene(m) {
+    if (!m?.pivot || !m?.group) return;
+
     // Rotation
     m.pivot.rotation.x = (m.baseRotX || 0) + (m.__tmpArx || 0);
     m.pivot.rotation.y = (m.baseRotY || 0) + (m.__tmpAry || 0);
@@ -2358,7 +2347,7 @@ function playAnimation() {
     const s = m.__tmpAsc || 1;
     m.group.scale.set(bsx * s, bsy * s, bsz);
 
-    // Position relative to cached "rest" pivot position
+    // Position relative to cached rest
     const bx = typeof m.__animBasePosX === "number" ? m.__animBasePosX : m.pivot.position.x;
     const by = typeof m.__animBasePosY === "number" ? m.__animBasePosY : m.pivot.position.y;
     const bz = typeof m.__animBasePosZ === "number" ? m.__animBasePosZ : m.pivot.position.z;
@@ -2386,12 +2375,7 @@ function playAnimation() {
 
   const preset = (params.animPreset || "depth").toLowerCase();
   const alsoDepth = preset === "depth" ? true : !!params.animAlsoDepth;
-
-  const tweenVars = {
-    duration,
-    stagger: { each: stagger, from: params.animStaggerFrom },
-    onUpdate: applyAll,
-  };
+  const depthTarget = maxF;
 
   // Reset proxy channels
   for (const p of proxies) {
@@ -2402,37 +2386,115 @@ function playAnimation() {
   }
 
   const axis = (params.animAxis || "y").toLowerCase();
-  const depthTarget = maxF;
 
-  tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: preset !== "blast" });
+  const tweenVars = {
+    duration,
+    stagger: { each: stagger, from: params.animStaggerFrom },
+    onUpdate: applyAll,
+  };
 
-  if (preset === "depth") {
-    tl.to(proxies, { ...tweenVars, ease, f: depthTarget }, 0);
+  // Kill timeline (defensive)
+  if (tl) {
+    tl.kill();
+    tl = null;
+  }
 
-  } else if (preset === "twist") {
-    const vars = { ...tweenVars, ease };
-    if (axis === "x") vars.rx = rotRad;
-    else vars.ry = rotRad;
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
+  // ------------------------------------------------------------
+  // Timeline per preset
+  // ------------------------------------------------------------
+  if (preset === "blast") {
+    tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
-  } else if (preset === "inflate") {
-    const vars = { ...tweenVars, ease, s: 1 + inflateAmt };
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
+    tl.to(
+      proxies,
+      {
+        ...tweenVars,
+        ease: blastEaseOut,
+        bl: 1,
+        ...(alsoDepth ? { f: depthTarget } : {}),
+      },
+      0
+    );
 
-  } else if (preset === "spin") {
-    const vars = { ...tweenVars, ease };
-    if (axis === "x") vars.rx = spinRad;
-    else if (axis === "y") vars.ry = spinRad;
-    else vars.rz = spinRad;
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
+    if (blastReturn) {
+      tl.to(
+        proxies,
+        {
+          ...tweenVars,
+          ease: blastEaseIn,
+          bl: 0,
+          ...(alsoDepth ? { f: minF } : {}),
+        },
+        ">-0.05"
+      );
+    }
 
   } else if (preset === "explode") {
-    const vars = { ...tweenVars, ease, ex: 1 };
-    if (alsoDepth) vars.f = depthTarget;
-    tl.to(proxies, vars, 0);
+    // ✅ Explode uses OUT -> hold -> (optional IN) -> returnHold
+    tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
+
+    // OUT
+    tl.to(
+      proxies,
+      {
+        ...tweenVars,
+        ease: exEaseOut,
+        ex: 1,
+        ...(alsoDepth ? { f: depthTarget } : {}),
+      },
+      0
+    );
+
+    // Hold at full explode
+    if (exHold > 0) tl.to({}, { duration: exHold });
+
+    // RETURN
+    if (exReturn) {
+      tl.to(
+        proxies,
+        {
+          ...tweenVars,
+          ease: exEaseIn,
+          ex: 0,
+          ...(alsoDepth ? { f: minF } : {}),
+        },
+        ">"
+      );
+
+      // Hold after return (lets loops breathe)
+      if (exReturnHold > 0) tl.to({}, { duration: exReturnHold });
+    } else {
+      // If not returning, still allow a small pause before loop repeats
+      if (exReturnHold > 0) tl.to({}, { duration: exReturnHold });
+    }
+
+  } else {
+    // Default presets use yoyo
+    tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
+
+    if (preset === "depth") {
+      tl.to(proxies, { ...tweenVars, ease, f: depthTarget }, 0);
+
+    } else if (preset === "twist") {
+      const vars = { ...tweenVars, ease };
+      if (axis === "x") vars.rx = rotRad;
+      else vars.ry = rotRad;
+      if (alsoDepth) vars.f = depthTarget;
+      tl.to(proxies, vars, 0);
+
+    } else if (preset === "inflate") {
+      const vars = { ...tweenVars, ease, s: 1 + inflateAmt };
+      if (alsoDepth) vars.f = depthTarget;
+      tl.to(proxies, vars, 0);
+
+    } else if (preset === "spin") {
+      const vars = { ...tweenVars, ease };
+      if (axis === "x") vars.rx = spinRad;
+      else if (axis === "y") vars.ry = spinRad;
+      else vars.rz = spinRad;
+      if (alsoDepth) vars.f = depthTarget;
+      tl.to(proxies, vars, 0);
+    }
   }
 }
 
@@ -3269,6 +3331,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

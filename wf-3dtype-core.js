@@ -1770,7 +1770,7 @@ async function setFontFromUrl(url) {
       )
     );
     buildText();
-    if (window.__tp_animPlaying) playAnimation();
+    if (window.__tp_animPlaying) ation();
   } catch (e) {
     console.error(e);
     alert("Font load failed. Use a THREE typeface JSON (.typeface.json).");
@@ -1780,7 +1780,7 @@ function setFontFromUploadedJsonText(t) {
   try {
     font = fontLoader.parse(JSON.parse(t));
     buildText();
-    if (window.__tp_animPlaying) playAnimation();
+    if (window.__tp_animPlaying) ation();
   } catch (e) {
     console.error(e);
     alert("Could not parse font. Upload a THREE typeface JSON (.typeface.json).");
@@ -1900,11 +1900,62 @@ function stopAnimation() {
 window.stopAnimation = stopAnimation;
 
 
+
+
 function playAnimation() {
   if (!gsap || !glyphs.length) return;
+
+  const wasRunning = !!tl;
   if (tl) {
     tl.kill();
     tl = null;
+  }
+
+  // ------------------------------------------------------------
+  // ✅ FIX 1: If we are restarting while already playing (usually due to UI tweaks),
+  // snap everyone back to the true layout BEFORE we (re)cache base positions.
+  // This prevents "random new home positions" after editing explode params mid-play.
+  // Assumption per you: baseX/baseY exists; fallback to current pivot if not.
+  // ------------------------------------------------------------
+  if (wasRunning) {
+    for (const m of glyphs) {
+      if (!m || !m.pivot || !m.group) continue;
+
+      const lx = (typeof m.baseX === "number") ? m.baseX : (m.pivot.position?.x ?? 0);
+      const ly = (typeof m.baseY === "number") ? m.baseY : (m.pivot.position?.y ?? 0);
+      const lz = (typeof m.baseZ === "number") ? m.baseZ : (m.pivot.position?.z ?? 0);
+
+      m.pivot.position.x = lx;
+      m.pivot.position.y = ly;
+      m.pivot.position.z = lz;
+
+      // Clear anim residue so next cache is clean
+      m.explodeZLift = 0;
+      m.explodeF = 0;
+
+      m.__tmpOx = 0; m.__tmpOy = 0; m.__tmpOz = 0;
+      m.animOffsetX = 0; m.animOffsetY = 0; m.animOffsetZ = 0;
+
+      m.__tmpArx = 0; m.__tmpAry = 0; m.__tmpArz = 0;
+      m.animRotX = 0; m.animRotY = 0; m.animRotZ = 0;
+
+      m.pivot.rotation.x = (m.baseRotX || 0);
+      m.pivot.rotation.y = (m.baseRotY || 0);
+      m.pivot.rotation.z = (m.baseRotZ || 0);
+
+      m.__tmpAsc = 1;
+      m.animScale = 1;
+
+      const bsx = m.baseScaleX || 1;
+      const bsy = m.baseScaleY || 1;
+      const bsz = m.baseScaleZ || 1;
+      m.group.scale.set(bsx, bsy, bsz);
+
+      m.depthF = 1;
+      _updateDepth(m);
+    }
+
+    try { _applyCharZOffsetsFromParams(); } catch (e) {}
   }
 
   const duration = Number(params.animSpeed || 1.2);
@@ -1936,14 +1987,17 @@ function playAnimation() {
   const flatMembers = [];
   for (const p of proxies) for (const m of p.members) flatMembers.push(m);
 
-  // ✅ IMPORTANT FIX:
-  // Cache the "rest" layout position at the moment Play is pressed.
-  // This respects charSpacing / layout / alignment exactly as you see it when static.
+  // ------------------------------------------------------------
+  // ✅ FIX 2: Cache base/rest positions ONLY ONCE per "play session"
+  // If we are re-playing because params changed while playing, we DO NOT
+  // overwrite cached bases with mid-explosion positions.
+  // ------------------------------------------------------------
   for (const m of flatMembers) {
-    if (!m.pivot) continue;
-    m.__animBasePosX = m.pivot.position.x;
-    m.__animBasePosY = m.pivot.position.y;
-    m.__animBasePosZ = m.pivot.position.z;
+    if (!m || !m.pivot) continue;
+
+    if (typeof m.__animBasePosX !== "number") m.__animBasePosX = m.pivot.position.x;
+    if (typeof m.__animBasePosY !== "number") m.__animBasePosY = m.pivot.position.y;
+    if (typeof m.__animBasePosZ !== "number") m.__animBasePosZ = m.pivot.position.z;
   }
 
   const rotRad = THREE.MathUtils.degToRad(Number(params.animRotateDeg || 35));
@@ -2009,7 +2063,7 @@ function playAnimation() {
     return t * t * (3 - 2 * t);
   }
 
-  // ✅ Use cached base positions for "layout space"
+  // Use cached base positions for "layout space"
   function getGlyphXY(m) {
     const gx = typeof m.__animBasePosX === "number" ? m.__animBasePosX : (m.pivot?.position?.x ?? 0);
     const gy = typeof m.__animBasePosY === "number" ? m.__animBasePosY : (m.pivot?.position?.y ?? 0);
@@ -2304,7 +2358,7 @@ function playAnimation() {
     const s = m.__tmpAsc || 1;
     m.group.scale.set(bsx * s, bsy * s, bsz);
 
-    // ✅ Position relative to cached "rest" pivot position
+    // Position relative to cached "rest" pivot position
     const bx = typeof m.__animBasePosX === "number" ? m.__animBasePosX : m.pivot.position.x;
     const by = typeof m.__animBasePosY === "number" ? m.__animBasePosY : m.pivot.position.y;
     const bz = typeof m.__animBasePosZ === "number" ? m.__animBasePosZ : m.pivot.position.z;
@@ -2350,67 +2404,40 @@ function playAnimation() {
   const axis = (params.animAxis || "y").toLowerCase();
   const depthTarget = maxF;
 
-  if (preset === "blast") {
-    tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
+  tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: preset !== "blast" });
 
-    tl.to(
-      proxies,
-      {
-        ...tweenVars,
-        ease: blastEaseOut,
-        bl: 1,
-        ...(alsoDepth ? { f: depthTarget } : {}),
-      },
-      0
-    );
+  if (preset === "depth") {
+    tl.to(proxies, { ...tweenVars, ease, f: depthTarget }, 0);
 
-    if (blastReturn) {
-      tl.to(
-        proxies,
-        {
-          ...tweenVars,
-          ease: blastEaseIn,
-          bl: 0,
-          ...(alsoDepth ? { f: minF } : {}),
-        },
-        ">-0.05"
-      );
-    }
-  } else {
-    tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
+  } else if (preset === "twist") {
+    const vars = { ...tweenVars, ease };
+    if (axis === "x") vars.rx = rotRad;
+    else vars.ry = rotRad;
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
 
-    if (preset === "depth") {
-      tl.to(proxies, { ...tweenVars, ease, f: depthTarget }, 0);
+  } else if (preset === "inflate") {
+    const vars = { ...tweenVars, ease, s: 1 + inflateAmt };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
 
-    } else if (preset === "twist") {
-      const vars = { ...tweenVars, ease };
-      if (axis === "x") vars.rx = rotRad;
-      else vars.ry = rotRad;
-      if (alsoDepth) vars.f = depthTarget;
-      tl.to(proxies, vars, 0);
+  } else if (preset === "spin") {
+    const vars = { ...tweenVars, ease };
+    if (axis === "x") vars.rx = spinRad;
+    else if (axis === "y") vars.ry = spinRad;
+    else vars.rz = spinRad;
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
 
-    } else if (preset === "inflate") {
-      const vars = { ...tweenVars, ease, s: 1 + inflateAmt };
-      if (alsoDepth) vars.f = depthTarget;
-      tl.to(proxies, vars, 0);
-
-    } else if (preset === "spin") {
-      const vars = { ...tweenVars, ease };
-      if (axis === "x") vars.rx = spinRad;
-      else if (axis === "y") vars.ry = spinRad;
-      else vars.rz = spinRad;
-      if (alsoDepth) vars.f = depthTarget;
-      tl.to(proxies, vars, 0);
-
-    } else if (preset === "explode") {
-      const vars = { ...tweenVars, ease, ex: 1 };
-      if (alsoDepth) vars.f = depthTarget;
-      tl.to(proxies, vars, 0);
-    }
+  } else if (preset === "explode") {
+    const vars = { ...tweenVars, ease, ex: 1 };
+    if (alsoDepth) vars.f = depthTarget;
+    tl.to(proxies, vars, 0);
   }
 }
 
 window.playAnimation = playAnimation;
+
 
 
 
@@ -3242,6 +3269,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

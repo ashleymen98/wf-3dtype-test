@@ -145,52 +145,63 @@ ensureParam(
       ensureParam(params, "animSpinDeg", 360);
 
       // Explode (upgraded axis controls + shape controls)
-      ensureParam(params, "animExplodeAmount", 220);
-      ensureParam(params, "animExplodeDiameterX", 1.0);
-      ensureParam(params, "animExplodeDiameterY", 1.0);
-      ensureParam(params, "animExplodeDiameter", 1.0); // NEW master
-      ensureParam(params, "animExplodeAngleOffset", 0);
-      ensureParam(params, "animExplodeZAmount", 0);
-      ensureParam(params, "animExplodeZSpread", 0.0); // NEW
-      ensureParam(params, "animExplodeRotDeg", 55);
-      ensureParam(params, "animExplodeRotAxis", "z");
-      ensureParam(params, "animExplodeRandomDir", true);
 
-      ensureParam(params, "animExplodeShape", "burst"); // NEW
-      ensureParam(params, "animExplodeRingAngle", 0); // NEW
-      ensureParam(params, "animExplodeNoise", 0.15); // NEW
 
-      // Impact-style explode (NEW)
+      // ------------------------------------------------------------
+// Explode (clean + consistent defaults)
+// ------------------------------------------------------------
+ensureParam(params, "animExplodeAmount", 220);
+ensureParam(params, "animExplodeDiameterX", 1.0);
+ensureParam(params, "animExplodeDiameterY", 1.0);
+ensureParam(params, "animExplodeDiameter", 1.0); // master
+ensureParam(params, "animExplodeAngleOffset", 0);
+ensureParam(params, "animExplodeZAmount", 0);
+ensureParam(params, "animExplodeZSpread", 0.0);
+ensureParam(params, "animExplodeRotDeg", 55);
+ensureParam(params, "animExplodeRotAxis", "z");
+ensureParam(params, "animExplodeRandomDir", true);
+
+ensureParam(params, "animExplodeShape", "burst"); // burst | ring | sphere | linex | liney
+ensureParam(params, "animExplodeRingAngle", 0);
+ensureParam(params, "animExplodeNoise", 0.15);
+
+// ------------------------------------------------------------
+// Impact-style explode
+// ------------------------------------------------------------
 ensureParam(params, "animExplodeImpactOn", true);
 ensureParam(params, "animExplodeImpactDir", "front"); // front | back
 ensureParam(params, "animExplodeImplode", false);     // inward instead of outward
-ensureParam(params, "animExplodeImpactStrength", 1.0); // scales per-char impulse
-ensureParam(params, "animExplodeImpactRadius", 260);   // in layout/world-ish units
-ensureParam(params, "animExplodeImpactFalloff", 2.2);  // power curve
-ensureParam(params, "animExplodeImpactX", 0.0);        // -1..1 center offset
-ensureParam(params, "animExplodeImpactY", 0.0);        // -1..1 center offset
-ensureParam(params, "animExplodeImpactZPush", 160);    // Z shove amount
-ensureParam(params, "animExplodeImpactRadialBoost", 0.55); // extra XY boost near hit
 
+ensureParam(params, "animExplodeImpactStrength", 1.0);
+ensureParam(params, "animExplodeImpactRadius", 260);
+ensureParam(params, "animExplodeImpactFalloff", 2.2);
+ensureParam(params, "animExplodeImpactX", 0.0);       // -1..1
+ensureParam(params, "animExplodeImpactY", 0.0);       // -1..1
+ensureParam(params, "animExplodeImpactZPush", 160);
+ensureParam(params, "animExplodeImpactRadialBoost", 0.55);
 
-ensureParam(params, "animExplodeImpactFrac", 0.18);
-
-ensureParam(params, "animExplodeImpactEase", "power4.out");
-ensureParam(params, "animExplodeBurstEase", "expo.out");
-ensureParam(params, "animExplodeReturn", false);
-ensureParam(params, "animExplodeReturnEase", "expo.in");
-
-      // Explode OUT/RETURN timing + easing (NEW)
+// ------------------------------------------------------------
+// Explode OUT/RETURN timing + easing
+// (these are the ONLY ease/return keys we’ll use)
+// ------------------------------------------------------------
 ensureParam(params, "animExplodeHold", 0.15);           // pause at full explode
 ensureParam(params, "animExplodeReturn", true);         // whether it comes back
 ensureParam(params, "animExplodeReturnHold", 0.10);     // pause after return
 ensureParam(params, "animExplodeEaseOut", "expo.out");  // explode easing
 ensureParam(params, "animExplodeEaseIn", "expo.in");    // return easing
 
-// Explode rotation variance (NEW)
-ensureParam(params, "animExplodeRotMinDeg", 20);
-ensureParam(params, "animExplodeRotMaxDeg", 85);
+// ------------------------------------------------------------
+// Explode rotation variance
+// (these are the ONLY rot variance keys we’ll use)
+// ------------------------------------------------------------
+ensureParam(params, "animExplodeRotMinDeg", 10);
+ensureParam(params, "animExplodeRotMaxDeg", 90);
 
+// ------------------------------------------------------------
+// Optional clip-scale (anti-clipping helper)
+// ------------------------------------------------------------
+ensureParam(params, "animExplodeClipScaleOn", false);
+ensureParam(params, "animExplodeClipScaleDown", 0.08);
 
       
 
@@ -949,121 +960,107 @@ fCollide.addBinding(params, "collideGrid", { label: "grid accel" });
       const fPresetEx = tMotion.addFolder({ title: "Preset Tuning" });
       fPresetEx.addBinding(params, "animSpinDeg", { label: "spin deg", min: 0, max: 1440, step: 5 });
 
-      const fExplode = fPresetEx.addFolder({ title: "Explode" });
-      fExplode.addBinding(params, "animExplodeAmount", { label: "distance", min: 0, max: 900, step: 5 });
-      
-
-      // Existing ellipse controls
-      fExplode.addBinding(params, "animExplodeDiameterX", { label: "diam X", min: 0.1, max: 3, step: 0.01 });
-      fExplode.addBinding(params, "animExplodeDiameterY", { label: "diam Y", min: 0.1, max: 3, step: 0.01 });
-
-      // NEW: master + shapes
-      fExplode.addBinding(params, "animExplodeDiameter", { label: "diam master", min: 0, max: 3, step: 0.01 });
-      fExplode.addBinding(params, "animExplodeShape", {
-        label: "shape",
-        options: { Burst: "burst", Ring: "ring", Sphere: "sphere", "Line X": "lineX", "Line Y": "lineY" },
-      });
-      fExplode.addBinding(params, "animExplodeRingAngle", { label: "ring angle", min: 0, max: 360, step: 1 });
-      fExplode.addBinding(params, "animExplodeNoise", { label: "noise", min: 0, max: 1, step: 0.01 });
-
-      fExplode.addBinding(params, "animExplodeAngleOffset", { label: "field angle", min: 0, max: 360, step: 1 });
-      fExplode.addBinding(params, "animExplodeZAmount", { label: "Z amt", min: -400, max: 400, step: 1 });
-
-      // NEW: extra Z spread (sphere-ish)
-      fExplode.addBinding(params, "animExplodeZSpread", { label: "Z spread", min: 0, max: 2, step: 0.01 });
-
-      // Rotation axis controls
-      fExplode.addBinding(params, "animExplodeRotDeg", { label: "rot deg", min: 0, max: 720, step: 5 });
-      fExplode.addBinding(params, "animExplodeRotAxis", { label: "rot axis", options: { X: "x", Y: "y", Z: "z", Random: "random" } });
-      fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
-
-      // NEW: impact controls
-fExplode.addBinding(params, "animExplodeImpactOn", { label: "impact on" });
-fExplode.addBinding(params, "animExplodeImpactDir", {
-  label: "hit dir",
-  options: { Front: "front", Back: "back" },
-});
-fExplode.addBinding(params, "animExplodeImplode", { label: "implode" });
-fExplode.addBinding(params, "animExplodeImpactStrength", {
-  label: "impact str",
-  min: 0,
-  max: 3,
-  step: 0.01,
-});
-fExplode.addBinding(params, "animExplodeImpactRadius", {
-  label: "impact radius",
-  min: 40,
-  max: 900,
-  step: 5,
-});
-fExplode.addBinding(params, "animExplodeImpactFalloff", {
-  label: "falloff",
-  min: 0.5,
-  max: 6,
-  step: 0.05,
-});
-fExplode.addBinding(params, "animExplodeImpactX", {
-  label: "impact X",
-  min: -1,
-  max: 1,
-  step: 0.01,
-});
-fExplode.addBinding(params, "animExplodeImpactY", {
-  label: "impact Y",
-  min: -1,
-  max: 1,
-  step: 0.01,
-});
-fExplode.addBinding(params, "animExplodeImpactZPush", {
-  label: "Z push",
-  min: -600,
-  max: 600,
-  step: 5,
-});
-fExplode.addBinding(params, "animExplodeImpactRadialBoost", {
-  label: "radial boost",
-  min: 0,
-  max: 2,
-  step: 0.01,
-});
-
-      fExplode.addBinding(params, "animExplodeClipScaleDown", {
-  label: "clip scale",
-  min: 0,
-  max: 0.25,
-  step: 0.005,
-});
 
 
-      // NEW: hold + easing + return
-fExplode.addBinding(params, "animExplodeHold", { label: "hold (s)", min: 0, max: 2, step: 0.01 });
-fExplode.addBinding(params, "animExplodeEaseOut", {
+
+      // ------------------------------------------------------------
+// Explode (Preset Tuning folder)
+// ------------------------------------------------------------
+const fExplode = fPresetEx.addFolder({ title: "Explode" });
+
+// Distance / field
+fExplode.addBinding(params, "animExplodeAmount", { label: "distance", min: 0, max: 900, step: 5 });
+fExplode.addBinding(params, "animExplodeAngleOffset", { label: "field angle", min: 0, max: 360, step: 1 });
+
+// Ellipse / diameter controls
+fExplode.addBinding(params, "animExplodeDiameter", { label: "diam master", min: 0, max: 3, step: 0.01 });
+fExplode.addBinding(params, "animExplodeDiameterX", { label: "diam X", min: 0.1, max: 3, step: 0.01 });
+fExplode.addBinding(params, "animExplodeDiameterY", { label: "diam Y", min: 0.1, max: 3, step: 0.01 });
+
+// Shape (IMPORTANT: values must match core: burst|ring|sphere|linex|liney)
+fExplode.addBinding(params, "animExplodeShape", {
+  label: "shape",
+  options: {
+    Burst: "burst",
+    Ring: "ring",
+    Sphere: "sphere",
+    "Line X": "linex",
+    "Line Y": "liney",
+  },
+});
+fExplode.addBinding(params, "animExplodeRingAngle", { label: "ring angle", min: 0, max: 360, step: 1 });
+
+// Z controls
+fExplode.addBinding(params, "animExplodeZAmount", { label: "Z amt", min: -400, max: 400, step: 1 });
+fExplode.addBinding(params, "animExplodeZSpread", { label: "Z spread", min: 0, max: 2, step: 0.01 });
+
+// Noise / randomness
+fExplode.addBinding(params, "animExplodeNoise", { label: "noise", min: 0, max: 1, step: 0.01 });
+
+// Rotation (base + variance)
+fExplode.addBinding(params, "animExplodeRotAxis", {
+  label: "rot axis",
+  options: { X: "x", Y: "y", Z: "z", Random: "random" },
+});
+fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
+
+// Keep your existing single value (still useful), but ALSO add variance controls
+fExplode.addBinding(params, "animExplodeRotDeg", { label: "rot deg (legacy)", min: 0, max: 720, step: 5 });
+fExplode.addBinding(params, "animExplodeRotMinDeg", { label: "rot min", min: 0, max: 720, step: 1 });
+fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, max: 720, step: 1 });
+
+// Impact (mass hit)
+const fImpact = fExplode.addFolder({ title: "Impact" });
+fImpact.addBinding(params, "animExplodeImpactOn", { label: "enabled" });
+fImpact.addBinding(params, "animExplodeImpactDir", { label: "dir", options: { Front: "front", Back: "back" } });
+fImpact.addBinding(params, "animExplodeImplode", { label: "implode" });
+
+fImpact.addBinding(params, "animExplodeImpactStrength", { label: "strength", min: 0, max: 3, step: 0.01 });
+fImpact.addBinding(params, "animExplodeImpactRadius", { label: "radius", min: 20, max: 1200, step: 5 });
+fImpact.addBinding(params, "animExplodeImpactFalloff", { label: "falloff", min: 0.2, max: 6, step: 0.05 });
+
+fImpact.addBinding(params, "animExplodeImpactX", { label: "center X", min: -1, max: 1, step: 0.01 });
+fImpact.addBinding(params, "animExplodeImpactY", { label: "center Y", min: -1, max: 1, step: 0.01 });
+
+fImpact.addBinding(params, "animExplodeImpactZPush", { label: "Z push", min: 0, max: 600, step: 5 });
+fImpact.addBinding(params, "animExplodeImpactRadialBoost", { label: "radial boost", min: 0, max: 2, step: 0.01 });
+
+// Timing + easing (OUT / RETURN)
+const fTiming = fExplode.addFolder({ title: "Timing + Ease" });
+fTiming.addBinding(params, "animExplodeHold", { label: "hold (out)", min: 0, max: 3, step: 0.01 });
+fTiming.addBinding(params, "animExplodeReturn", { label: "return" });
+fTiming.addBinding(params, "animExplodeReturnHold", { label: "hold (return)", min: 0, max: 3, step: 0.01 });
+
+fTiming.addBinding(params, "animExplodeEaseOut", {
   label: "ease out",
   options: {
     "expo.out": "expo.out",
     "power4.out": "power4.out",
     "power3.out": "power3.out",
     "sine.out": "sine.out",
-    "back.out(1.6)": "back.out(1.6)",
+    "circ.out": "circ.out",
   },
 });
-fExplode.addBinding(params, "animExplodeReturn", { label: "return" });
-fExplode.addBinding(params, "animExplodeEaseIn", {
+
+fTiming.addBinding(params, "animExplodeEaseIn", {
   label: "ease in",
   options: {
     "expo.in": "expo.in",
+    "expo.inOut": "expo.inOut",
     "power4.in": "power4.in",
     "power3.in": "power3.in",
     "sine.in": "sine.in",
+    "circ.in": "circ.in",
   },
 });
-fExplode.addBinding(params, "animExplodeReturnHold", { label: "return hold (s)", min: 0, max: 2, step: 0.01 });
 
-// NEW: rotation min/max
-fExplode.addBinding(params, "animExplodeRotMinDeg", { label: "rot min", min: 0, max: 720, step: 1 });
-fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, max: 720, step: 1 });
+// Optional anti-clipping helper (scale-down during explode)
+const fClip = fExplode.addFolder({ title: "Anti-clipping" });
+fClip.addBinding(params, "animExplodeClipScaleOn", { label: "scale down" });
+fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, max: 0.4, step: 0.005 });
 
 
+      
 
       fAnim.addButton({ title: "Play" }).on("click", () => {
         window.__tp_animPlaying = true;
@@ -1423,6 +1420,7 @@ fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

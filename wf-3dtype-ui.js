@@ -575,12 +575,16 @@ kernTA.addEventListener("input", onKernInput);
         }
       }
       function syncProxyFromParams() {
-        ensureZArray();
-        zProxy = {};
-        for (let i = 0; i < params.charZOffsets.length; i++) {
-          zProxy["c" + i] = Number(params.charZOffsets[i] || 0);
-        }
-      }
+  ensureZArray();
+
+  // ✅ do not reassign zProxy (bindings keep old reference)
+  for (const k in zProxy) delete zProxy[k];
+
+  for (let i = 0; i < params.charZOffsets.length; i++) {
+    zProxy["c" + i] = Number(params.charZOffsets[i] || 0);
+  }
+}
+
       function syncParamsFromProxy() {
         for (let i = 0; i < params.charZOffsets.length; i++) {
           params.charZOffsets[i] = Number(zProxy["c" + i] || 0);
@@ -760,12 +764,17 @@ kernTA.addEventListener("input", onKernInput);
         }
       }
       function syncFaceProxyFromParams() {
-        ensureFaceArray();
-        faceProxy = {};
-        for (let i = 0; i < params.faceLetterColors.length; i++) {
-          faceProxy["c" + i] = String(params.faceLetterColors[i] || "#ffffff");
-        }
-      }
+  ensureFaceArray();
+
+  // ✅ IMPORTANT: do NOT reassign faceProxy (bindings keep old reference)
+  // Instead, mutate the existing object in-place.
+  for (const k in faceProxy) delete faceProxy[k];
+
+  for (let i = 0; i < params.faceLetterColors.length; i++) {
+    faceProxy["c" + i] = String(params.faceLetterColors[i] || "#ffffff");
+  }
+}
+
       function syncFaceParamsFromProxy() {
         for (let i = 0; i < params.faceLetterColors.length; i++) {
           params.faceLetterColors[i] = String(faceProxy["c" + i] || "#ffffff");
@@ -1463,6 +1472,7 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

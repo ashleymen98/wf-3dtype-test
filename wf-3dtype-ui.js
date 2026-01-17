@@ -102,17 +102,10 @@
       // ---------------------------
       // SAFE DEFAULTS
       // ---------------------------
-      ensureParam(params, "animExplodeClipScaleDown", 0.08);
-      ensureParam(params, "animExplodeImpactPreset", "center"); // center|tl|tr|bl|br
 
-
-
-      
-      ensureParam(params, "animExplodeDepthShrink", 0.22);
 
       ensureParam(params, "bgMode", "solid");
       ensureParam(params, "bgSolid", "#111111");
-
       ensureParam(params, "bgGradA", "#101018");
       ensureParam(params, "bgGradB", "#1a0f24");
       ensureParam(params, "bgGradAngle", 35);
@@ -121,16 +114,15 @@
       ensureParam(params, "faceMode", "gradient");
       ensureParam(params, "faceUVSpace", "glyph");
       ensureParam(params, "faceSolid", "#ff0000");
-
       ensureParam(params, "faceLetterColors", []);
+
       // Kerning defaults
-ensureParam(params, "kerningOn", true);
-ensureParam(params, "kerningStrength", 1.0);
-ensureParam(
-  params,
-  "kerningPairsText",
-  "AV:-18\nVA:-14\nTo:-10\nLY:-12\nLT:-10\nTa:-10\nYo:-10"
-);
+      ensureParam(params, "kerningOn", true);
+      ensureParam(params, "kerningStrength", 1.0);
+      ensureParam(params,
+      "kerningPairsText",
+      "AV:-18\nVA:-14\nTo:-10\nLY:-12\nLT:-10\nTa:-10\nYo:-10"
+      );
 
       ensureParam(params, "faceChkScale", 42);
       ensureParam(params, "faceChkLineWidth", 3);
@@ -150,63 +142,66 @@ ensureParam(
 
 
       // ------------------------------------------------------------
-// Explode (clean + consistent defaults)
-// ------------------------------------------------------------
-ensureParam(params, "animExplodeAmount", 220);
-ensureParam(params, "animExplodeDiameterX", 1.0);
-ensureParam(params, "animExplodeDiameterY", 1.0);
-ensureParam(params, "animExplodeDiameter", 1.0); // master
-ensureParam(params, "animExplodeAngleOffset", 0);
-ensureParam(params, "animExplodeZAmount", 0);
-ensureParam(params, "animExplodeZSpread", 0.0);
-ensureParam(params, "animExplodeRotDeg", 55);
-ensureParam(params, "animExplodeRotAxis", "z");
-ensureParam(params, "animExplodeRandomDir", true);
+      // Explode (clean + consistent defaults)
+      // ------------------------------------------------------------
 
-ensureParam(params, "animExplodeShape", "burst"); // burst | ring | sphere | linex | liney
-ensureParam(params, "animExplodeRingAngle", 0);
-ensureParam(params, "animExplodeNoise", 0.15);
+      ensureParam(params, "animExplodeImpactMix", 0.45);       // how much impact drives motion
+      ensureParam(params, "animExplodeImpactProfile", "center"); // center|edge
 
-// ------------------------------------------------------------
-// Impact-style explode
-// ------------------------------------------------------------
-ensureParam(params, "animExplodeImpactOn", true);
-ensureParam(params, "animExplodeImpactDir", "front"); // front | back
-ensureParam(params, "animExplodeImplode", false);     // inward instead of outward
-
-ensureParam(params, "animExplodeImpactStrength", 1.0);
-ensureParam(params, "animExplodeImpactRadius", 260);
-ensureParam(params, "animExplodeImpactFalloff", 2.2);
-ensureParam(params, "animExplodeImpactX", 0.0);       // -1..1
-ensureParam(params, "animExplodeImpactY", 0.0);       // -1..1
-ensureParam(params, "animExplodeImpactZPush", 160);
-ensureParam(params, "animExplodeImpactRadialBoost", 0.55);
-
-// ------------------------------------------------------------
-// Explode OUT/RETURN timing + easing
-// (these are the ONLY ease/return keys we’ll use)
-// ------------------------------------------------------------
-ensureParam(params, "animExplodeHold", 0.15);           // pause at full explode
-ensureParam(params, "animExplodeReturn", true);         // whether it comes back
-ensureParam(params, "animExplodeReturnHold", 0.10);     // pause after return
-ensureParam(params, "animExplodeEaseOut", "expo.out");  // explode easing
-ensureParam(params, "animExplodeEaseIn", "expo.in");    // return easing
-
-// ------------------------------------------------------------
-// Explode rotation variance
-// (these are the ONLY rot variance keys we’ll use)
-// ------------------------------------------------------------
-ensureParam(params, "animExplodeRotMinDeg", 10);
-ensureParam(params, "animExplodeRotMaxDeg", 90);
-
-// ------------------------------------------------------------
-// Optional clip-scale (anti-clipping helper)
-// ------------------------------------------------------------
-ensureParam(params, "animExplodeClipScaleOn", false);
-ensureParam(params, "animExplodeClipScaleDown", 0.08);
-
+      ensureParam(params, "animExplodeClipScaleDown", 0.08);
+      ensureParam(params, "animExplodeImpactPreset", "center"); // center|tl|tr|bl|br
+      ensureParam(params, "animExplodeDepthShrink", 0.22);
+      ensureParam(params, "animExplodeAmount", 220);
+      ensureParam(params, "animExplodeDiameterX", 1.0);
+      ensureParam(params, "animExplodeDiameterY", 1.0);
+      ensureParam(params, "animExplodeDiameter", 1.0); // master
+      ensureParam(params, "animExplodeAngleOffset", 0);
+      ensureParam(params, "animExplodeZAmount", 0);
+      ensureParam(params, "animExplodeZSpread", 0.0);
+      ensureParam(params, "animExplodeRotDeg", 55);
+      ensureParam(params, "animExplodeRotAxis", "z");
+      ensureParam(params, "animExplodeRandomDir", true);  
+      ensureParam(params, "animExplodeShape", "burst"); // burst | ring | sphere | linex | liney
+      ensureParam(params, "animExplodeRingAngle", 0);
+      ensureParam(params, "animExplodeNoise", 0.15);
       
+      // ------------------------------------------------------------
+      // Impact-style explode
+      // ------------------------------------------------------------
+      ensureParam(params, "animExplodeImpactOn", true);
+      ensureParam(params, "animExplodeImpactDir", "front"); // front | back
+      ensureParam(params, "animExplodeImplode", false);     // inward instead of outward
+      
+      ensureParam(params, "animExplodeImpactStrength", 1.0);
+      ensureParam(params, "animExplodeImpactRadius", 260);
+      ensureParam(params, "animExplodeImpactFalloff", 2.2);
+      ensureParam(params, "animExplodeImpactX", 0.0);       // -1..1
+      ensureParam(params, "animExplodeImpactY", 0.0);       // -1..1
+      ensureParam(params, "animExplodeImpactZPush", 160);
+      ensureParam(params, "animExplodeImpactRadialBoost", 0.55);
+      
+      // ------------------------------------------------------------
+      // Explode OUT/RETURN timing + easing
+      // (these are the ONLY ease/return keys we’ll use)
+      // ------------------------------------------------------------
+      ensureParam(params, "animExplodeHold", 0.30);           // pause at full explode
+      ensureParam(params, "animExplodeReturn", true);         // whether it comes back
+      ensureParam(params, "animExplodeReturnHold", 0.30);     // pause after return
+      ensureParam(params, "animExplodeEaseOut", "expo.out");  // explode easing
+      ensureParam(params, "animExplodeEaseIn", "expo.in");    // return easing
 
+      // ------------------------------------------------------------
+      // Explode rotation variance
+      // (these are the ONLY rot variance keys we’ll use)
+      // ------------------------------------------------------------
+      ensureParam(params, "animExplodeRotMinDeg", 10);
+      ensureParam(params, "animExplodeRotMaxDeg", 90);
+      
+      // ------------------------------------------------------------
+      // Optional clip-scale (anti-clipping helper)
+      // ------------------------------------------------------------
+      ensureParam(params, "animExplodeClipScaleOn", false);
+      ensureParam(params, "animExplodeClipScaleDown", 0.08);
 
       // Hover Spin360 (NEW fixed mapping)
       ensureParam(params, "hoverSpin360Axis", "random");
@@ -1071,6 +1066,19 @@ fImpact.addBinding(params, "animExplodeImpactStrength", { label: "strength", min
 fImpact.addBinding(params, "animExplodeImpactRadius", { label: "radius", min: 20, max: 1200, step: 5 });
 fImpact.addBinding(params, "animExplodeImpactFalloff", { label: "falloff", min: 0.2, max: 6, step: 0.05 });
 
+fImpact.addBinding(params, "animExplodeImpactProfile", {
+  label: "profile",
+  options: { Center: "center", Edge: "edge" },
+});
+
+fImpact.addBinding(params, "animExplodeImpactMix", {
+  label: "impact mix",
+  min: 0,
+  max: 1,
+  step: 0.01,
+});
+
+
 fImpact.addBinding(params, "animExplodeImpactX", { label: "center X", min: -1, max: 1, step: 0.01 });
 fImpact.addBinding(params, "animExplodeImpactY", { label: "center Y", min: -1, max: 1, step: 0.01 });
 
@@ -1297,6 +1305,8 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
 "animExplodeEaseIn",
 "animExplodeRotMinDeg",
 "animExplodeRotMaxDeg",
+"animExplodeImpactMix",
+"animExplodeImpactProfile",
 
 
         
@@ -1472,6 +1482,7 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

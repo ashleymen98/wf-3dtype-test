@@ -2016,32 +2016,40 @@ function playAnimation() {
   // ------------------------------------------------------------
   const exImpactOn = !!params.animExplodeImpactOn;
 
-  // center | topLeft | topRight | bottomLeft | bottomRight
-  const exImpactOrigin = String(params.animExplodeImpactOrigin || "center").toLowerCase();
+  // NOTE: your UI currently uses animExplodeImpactPreset ("tl/tr/bl/br/center")
+  // but your core may still store it as "animExplodeImpactOrigin" in older builds.
+  // We'll support BOTH keys safely:
+  const exImpactPreset = String(params.animExplodeImpactPreset || "").toLowerCase(); // center|tl|tr|bl|br
+  const exImpactOrigin = String(params.animExplodeImpactOrigin || "center").toLowerCase(); // center|topleft|...
 
-  // front|back|left|right (shove axis)
-  const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase();
-
-  // inward/outward
+  const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back|left|right
   const exImplode = !!params.animExplodeImplode;
 
   const exImpactStrength = Number(params.animExplodeImpactStrength ?? 1.0);
+
+  // ✅ USE REAL RADIUS PARAM
+  const exImpactRadius = Math.max(1, Number(params.animExplodeImpactRadius ?? 260));
+
   const exImpactFalloff = Math.max(0.01, Number(params.animExplodeImpactFalloff ?? 2.2));
 
   // bbox offsets -1..1
   const exImpactX = Number(params.animExplodeImpactX ?? 0);
   const exImpactY = Number(params.animExplodeImpactY ?? 0);
 
+  // shove magnitude (Z for front/back, X for left/right)
   const exImpactPush = Number(params.animExplodeImpactZPush ?? 160);
 
   // direction blending away from hit point
   const exImpactDirBlend = clamp01(Number(params.animExplodeImpactDirBlend ?? 0.75));
-
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
-  // ✅ NEW: impact drives explode (profile + mix)
+  // drive profile + mix
   const exImpactMix = clamp01(Number(params.animExplodeImpactMix ?? 0.45)); // 0..1
   const exImpactProfile = String(params.animExplodeImpactProfile || "center").toLowerCase(); // center|edge
+
+  // debug viz
+  const exImpactVizOn = !!params.animExplodeImpactVizOn;
+  const exImpactVizZ = Number(params.animExplodeImpactVizZ ?? 8);
 
   // ------------------------------------------------------------
   // Collisions (your existing UI)
@@ -2117,17 +2125,25 @@ function playAnimation() {
     let cx = (bounds.minX + bounds.maxX) * 0.5;
     let cy = (bounds.minY + bounds.maxY) * 0.5;
 
-    // NOTE: in this layout, "top" is +Y
-    if (exImpactOrigin === "topleft" || exImpactOrigin === "topLeft") {
+    // Support NEW short presets (center/tl/tr/bl/br) and older strings (topleft/topright/...)
+    const p = exImpactPreset || exImpactOrigin;
+
+    const isTL = p === "tl" || p === "topleft" || p === "topLeft";
+    const isTR = p === "tr" || p === "topright" || p === "topRight";
+    const isBL = p === "bl" || p === "bottomleft" || p === "bottomLeft";
+    const isBR = p === "br" || p === "bottomright" || p === "bottomRight";
+
+    // NOTE: top is +Y
+    if (isTL) {
       cx = bounds.minX;
       cy = bounds.maxY;
-    } else if (exImpactOrigin === "topright" || exImpactOrigin === "topRight") {
+    } else if (isTR) {
       cx = bounds.maxX;
       cy = bounds.maxY;
-    } else if (exImpactOrigin === "bottomleft" || exImpactOrigin === "bottomLeft") {
+    } else if (isBL) {
       cx = bounds.minX;
       cy = bounds.minY;
-    } else if (exImpactOrigin === "bottomright" || exImpactOrigin === "bottomRight") {
+    } else if (isBR) {
       cx = bounds.maxX;
       cy = bounds.minY;
     } else {
@@ -2140,6 +2156,67 @@ function playAnimation() {
     cy += clamp01((exImpactY + 1) * 0.5) * bounds.h - bounds.h * 0.5;
 
     return [cx, cy];
+  }
+
+  // ---- debug viz helper (circle + dot) ----
+  function ensureImpactViz() {
+    if (!exImpactVizOn) return;
+
+    // Try a few common scene refs (your core has one of these)
+    const sceneRef =
+      (typeof scene !== "undefined" && scene) ||
+      window.scene ||
+      window.__scene ||
+      window.__WF_3DTYPE_SCENE__;
+
+    if (!sceneRef) return;
+
+    let g = window.__wfImpactViz;
+    if (!g) {
+      g = new THREE.Group();
+
+      // dot
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(6, 14, 14),
+        new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false })
+      );
+      dot.name = "dot";
+      g.add(dot);
+
+      // circle line (unit circle; we scale to radius)
+      const pts = [];
+      const N = 64;
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      const line = new THREE.Line(
+        geo,
+        new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false })
+      );
+      line.name = "ring";
+      g.add(line);
+
+      g.renderOrder = 9999;
+      g.visible = false;
+
+      sceneRef.add(g);
+      window.__wfImpactViz = g;
+    }
+
+    g.visible = true;
+    return g;
+  }
+
+  function updateImpactViz(cx, cy) {
+    const g = ensureImpactViz();
+    if (!g) return;
+    g.position.set(cx, cy, exImpactVizZ);
+
+    // scale ring to radius; dot stays constant size
+    const ring = g.getObjectByName("ring");
+    if (ring) ring.scale.set(exImpactRadius, exImpactRadius, 1);
   }
 
   function approxGlyphRadius(m) {
@@ -2184,7 +2261,7 @@ function playAnimation() {
       let pushX = 0,
         pushZ = 0;
 
-      // ✅ NEW: weight that drives motion (center vs edge profile)
+      // weight that drives motion (center vs edge profile)
       let impactWeight = 1;
 
       if (exImpactOn) {
@@ -2194,9 +2271,8 @@ function playAnimation() {
         const ddy = by - impactCY;
         const dist = Math.hypot(ddx, ddy);
 
-        const radius = Math.max(1, Math.hypot(bounds.w, bounds.h) * 0.65);
-
-        const t = 1 - dist / radius;
+        // ✅ NOW: true radius control
+        const t = 1 - dist / exImpactRadius;
         const prox = smooth01(t);
         impulse = Math.pow(prox, exImpactFalloff) * exImpactStrength;
 
@@ -2259,7 +2335,8 @@ function playAnimation() {
 
       const inOut = exImplode ? -1 : 1;
 
-      // ✅ APPLY WEIGHT: this is the “true implode” + “edge blowout” switch
+      // ✅ APPLY WEIGHT (this is what makes “center flares less / edges flare more”
+      // AND what makes “true implode” possible)
       ox += dx * explodeAmt * sx * explodeF * impactMul * inOut * impactWeight;
       oy += dy * explodeAmt * sy * explodeF * impactMul * inOut * impactWeight;
 
@@ -2269,7 +2346,7 @@ function playAnimation() {
       oz += pushZ * explodeF * inOut * impactWeight;
 
       // -------------------------
-      // Rotation (legacy OR range) + (optional) weight
+      // Rotation (legacy OR range) + weight
       // -------------------------
       let ax = exRotAxisBase;
       if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
@@ -2283,7 +2360,6 @@ function playAnimation() {
         r = mag * dir * explodeF;
       }
 
-      // ✅ tie rotation to the same weight so center/edge logic also affects spin
       r *= impactWeight;
 
       if (ax === "x") arx += r;
@@ -2497,6 +2573,10 @@ function playAnimation() {
   function applyAll() {
     const [icx, icy] = impactPointFromPreset();
 
+    // debug gizmo
+    if (exImpactVizOn) updateImpactViz(icx, icy);
+    else if (window.__wfImpactViz) window.__wfImpactViz.visible = false;
+
     for (const p of proxies) {
       for (const m of p.members) {
         computePerGlyph(p, m, icx, icy);
@@ -2576,9 +2656,7 @@ function playAnimation() {
       0
     );
 
-    if (exHold > 0) {
-      tl.to({}, { duration: exHold });
-    }
+    if (exHold > 0) tl.to({}, { duration: exHold });
 
     if (exReturnOn) {
       tl.to(
@@ -2592,9 +2670,7 @@ function playAnimation() {
         ">"
       );
 
-      if (exReturnHold > 0) {
-        tl.to({}, { duration: exReturnHold });
-      }
+      if (exReturnHold > 0) tl.to({}, { duration: exReturnHold });
     }
   } else {
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0, yoyo: true });
@@ -2623,6 +2699,7 @@ function playAnimation() {
 }
 
 window.playAnimation = playAnimation;
+
 
 
 
@@ -3455,6 +3532,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

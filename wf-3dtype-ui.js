@@ -174,6 +174,8 @@
       
       ensureParam(params, "animExplodeImpactStrength", 1.0);
       ensureParam(params, "animExplodeImpactRadius", 260);
+      ensureParam(params, "animExplodeImpactVizOn", false);    // NEW: show impact gizmo
+      ensureParam(params, "animExplodeImpactVizZ", 8);         // NEW: lift gizmo slightly forward
       ensureParam(params, "animExplodeImpactFalloff", 2.2);
       ensureParam(params, "animExplodeImpactX", 0.0);       // -1..1
       ensureParam(params, "animExplodeImpactY", 0.0);       // -1..1
@@ -1062,6 +1064,9 @@ fImpact.addBinding(params, "animExplodeImpactDir", {
 });
 fImpact.addBinding(params, "animExplodeImplode", { label: "implode" });
 
+      fImpact.addBinding(params, "animExplodeImpactVizOn", { label: "show impact" });
+
+
 fImpact.addBinding(params, "animExplodeImpactStrength", { label: "strength", min: 0, max: 3, step: 0.01 });
 fImpact.addBinding(params, "animExplodeImpactRadius", { label: "radius", min: 20, max: 1200, step: 5 });
 fImpact.addBinding(params, "animExplodeImpactFalloff", { label: "falloff", min: 0.2, max: 6, step: 0.05 });
@@ -1482,6 +1487,7 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

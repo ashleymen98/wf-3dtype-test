@@ -147,6 +147,8 @@
 
       ensureParam(params, "animExplodeImpactMix", 0.45);       // how much impact drives motion
       ensureParam(params, "animExplodeImpactProfile", "center"); // center|edge
+      ensureParam(params, "animExplodeCoreRadius", 80); // NEW
+
 
       ensureParam(params, "animExplodeClipScaleDown", 0.08);
       ensureParam(params, "animExplodeImpactPreset", "center"); // center|tl|tr|bl|br
@@ -1049,6 +1051,7 @@ fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
 fExplode.addBinding(params, "animExplodeRotDeg", { label: "rot deg (legacy)", min: 0, max: 720, step: 5 });
 fExplode.addBinding(params, "animExplodeRotMinDeg", { label: "rot min", min: 0, max: 720, step: 1 });
 fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, max: 720, step: 1 });
+fImpact.addBinding(params, "animExplodeCoreRadius", { label: "core radius", min: 0, max: 800, step: 5 });
 
 // Impact (mass hit)
 const fImpact = fExplode.addFolder({ title: "Impact" });
@@ -1487,6 +1490,7 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

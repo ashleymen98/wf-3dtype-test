@@ -1941,6 +1941,7 @@ function playAnimation() {
   for (const p of proxies) for (const m of p.members) flatMembers.push(m);
 
   // ✅ BASE-POSE CACHE (CRITICAL FIX)
+  // Only cache the "rest" pose if it's missing.
   const alreadyCached =
     flatMembers.length &&
     flatMembers.every(
@@ -1990,6 +1991,8 @@ function playAnimation() {
   const exRandDir = !!params.animExplodeRandomDir;
 
   // Rotation variance:
+  // If BOTH min/max are 0 => use legacy rotDeg
+  // Else stable per-glyph random in [min,max]
   const exRotMinDeg = Number(params.animExplodeRotMinDeg ?? 0);
   const exRotMaxDeg = Number(params.animExplodeRotMaxDeg ?? 0);
   const exUseRotRange =
@@ -2013,13 +2016,13 @@ function playAnimation() {
   // ------------------------------------------------------------
   const exImpactOn = !!params.animExplodeImpactOn;
 
-  // ✅ UI uses: animExplodeImpactPreset = center|tl|tr|bl|br
+  // ✅ UI uses animExplodeImpactPreset = center|tl|tr|bl|br
   const exImpactPreset = String(params.animExplodeImpactPreset || "center").toLowerCase();
 
   // shove direction: front/back (Z) OR left/right (X)
   const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back|left|right
 
-  // Implode pulls toward the impact point
+  // Implode pulls toward the impact point (not just invert)
   const exImplode = !!params.animExplodeImplode;
 
   const exImpactStrength = Number(params.animExplodeImpactStrength ?? 1.0);
@@ -2042,12 +2045,12 @@ function playAnimation() {
   const exImpactMix = clamp01(Number(params.animExplodeImpactMix ?? 0.45));
 
   // profile: center|edge
-  const exImpactProfile = String(params.animExplodeImpactProfile || "center").toLowerCase(); // center|edge
+  const exImpactProfile = String(params.animExplodeImpactProfile || "center").toLowerCase();
 
-  // Extra radial boost
+  // Extra radial boost near hit
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
-  // Core radius
+  // ✅ Core radius: tight “blast core” footprint
   const exCoreRadius = Math.max(0, Number(params.animExplodeCoreRadius ?? 80));
 
   // ------------------------------------------------------------
@@ -2078,6 +2081,7 @@ function playAnimation() {
     return a + (b - a) * t;
   }
 
+  // Small stable hash -> 0..1
   function stableRand01(i, salt) {
     let x = (i | 0) ^ ((salt | 0) + 0x9e3779b9);
     x ^= x >>> 16;
@@ -2098,6 +2102,7 @@ function playAnimation() {
     return [bx, by, bz];
   }
 
+  // Bounding box of the *static* layout (cached base positions)
   function getLayoutBounds() {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const m of flatMembers) {
@@ -2131,7 +2136,7 @@ function playAnimation() {
       cx = bounds.maxX; cy = bounds.minY;
     }
 
-    // ✅ offsets are true -1..1 across bbox half-extents
+    // ✅ true -1..1 offsets across bbox
     cx += exImpactX * (bounds.w * 0.5);
     cy += exImpactY * (bounds.h * 0.5);
 
@@ -2146,32 +2151,31 @@ function playAnimation() {
   }
 
   // ------------------------------------------------------------
-  // Debug viz (PATCH: attach viz to the SAME parent space as glyph pivots)
-  // This fixes “dot stuck” when cx/cy are in glyph-local coords.
+  // Debug viz (FIXED SPACE): parent to glyph-parent not scene root
   // ------------------------------------------------------------
   function getVizParent() {
-    // try to attach to the same parent that holds glyph pivots
-    for (let i = 0; i < flatMembers.length; i++) {
-      const p = flatMembers[i]?.pivot;
-      if (p && p.parent) return p.parent; // local space of pivots/baseX/baseY
-    }
-    return null;
+    const m0 = flatMembers && flatMembers[0];
+    const p = m0 && m0.pivot && m0.pivot.parent;
+    return p || null;
   }
 
-  function ensureImpactViz() {
-    const parent = getVizParent();
-    if (!parent) return null;
+  function ensureImpactViz(parentObj) {
+    if (!parentObj) return null;
 
     let g = window.__wfImpactViz;
+
+    // If it exists but is attached to a different parent, re-attach
+    if (g && g.parent !== parentObj) {
+      try { g.parent.remove(g); } catch (e) {}
+      try { parentObj.add(g); } catch (e) {}
+    }
+
     if (!g) {
       g = new THREE.Group();
       g.name = "__wfImpactViz";
 
-      // dot
-      const dot = new THREE.Mesh(
-        new THREE.SphereGeometry(6, 14, 14),
-        new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false })
-      );
+      const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false });
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(6, 14, 14), mat);
       dot.name = "dot";
       dot.renderOrder = 9999;
       g.add(dot);
@@ -2200,29 +2204,22 @@ function playAnimation() {
       g.add(core);
 
       g.renderOrder = 9999;
-      window.__wfImpactViz = g;
-      window.__wfImpactVizParent = null;
-    }
 
-    // PATCH: re-parent if needed (text rebuilds can swap parents)
-    if (window.__wfImpactVizParent !== parent) {
-      try {
-        g.parent?.remove(g);
-      } catch (e) {}
-      parent.add(g);
-      window.__wfImpactVizParent = parent;
+      parentObj.add(g);
+      window.__wfImpactViz = g;
     }
 
     return g;
   }
 
   function updateImpactViz(cx, cy) {
-    const g = ensureImpactViz();
+    const parentObj = getVizParent();
+    const g = ensureImpactViz(parentObj);
     if (!g) return;
 
     g.visible = true;
 
-    // cx/cy are in pivot-parent local space now, so this moves correctly
+    // ✅ Since g is parented to the SAME SPACE as glyph pivots, cx/cy are correct
     g.position.set(cx, cy, exImpactVizZ);
 
     const ring = g.getObjectByName("ring");
@@ -2246,94 +2243,84 @@ function playAnimation() {
     const explodeF = p.ex || 0;
 
     if (explodeF !== 0) {
-      // Base random direction
+      // Base random direction (kept, but impact can override it)
       const a0 = (m._expU || 0) + exAng;
       let dx = Math.cos(a0);
       let dy = Math.sin(a0);
 
-      // Noise jitter
       const n = 1 + (m._spinJitter || 0) * exNoise;
       let sx = exDX * exD * n;
       let sy = exDY * exD * n;
 
       const zSeed = m._expZ || 0;
-
-      // Stable Z layering lift
       m.explodeZLift = zSeed * exZLift * explodeF;
 
-      // -------------------------
-      // Impact field (PATCH: expanding “blast radius” over time)
-      // - We treat exCoreRadius as the initial “shock core”
-      // - And exImpactRadius as the final max radius
-      // - As explodeF increases, the effective radius expands outward
-      // -------------------------
       let impulse = 0;
       let pushX = 0, pushZ = 0;
 
       if (exImpactOn) {
         const [bx, by] = getBaseXYZ(m);
-
         const ddx = bx - impactCX;
         const ddy = by - impactCY;
         const dist = Math.hypot(ddx, ddy);
 
-        // Expanding wave radius (this is the “real explosion expanding” feel)
-        const startR = Math.max(1, exCoreRadius > 0.5 ? exCoreRadius : Math.max(1, exImpactRadius * 0.18));
-        const waveR = lerp(startR, exImpactRadius, smooth01(explodeF));
-
-        // broad field uses the expanding radius
-        const tb = 1 - dist / waveR;
+        // ---------- IMPULSE SHAPING ----------
+        // center profile: strongest near impact point
+        const tb = 1 - dist / exImpactRadius;
         const broad = Math.pow(smooth01(tb), exImpactFalloff) * exImpactStrength;
 
-        // core field remains tight (punch)
         let core = 0;
         if (exCoreRadius > 0.5) {
           const tc = 1 - dist / exCoreRadius;
           core = Math.pow(smooth01(tc), Math.max(1.2, exImpactFalloff + 0.6)) * exImpactStrength;
         }
 
-        // mix between broad + core (your UI param)
-        impulse = lerp(broad, core, exImpactMix);
+        let centerImpulse = lerp(broad, core, exImpactMix);
 
-        // profile shaping
+        // edge profile: EXPANDING SHOCKWAVE (blast radius expands with explodeF)
+        // waveRadius grows 0 -> impactRadius as explodeF grows
         if (exImpactProfile === "edge") {
-          // strongest near the wave edge, weaker at the center
-          const e = 1 - smooth01(tb); // 0 at center (inside), ~1 near/outside edge
-          const edge = Math.pow(clamp01(e), 1.35) * exImpactStrength;
-          impulse = lerp(impulse, edge, 0.75);
+          const waveR = exImpactRadius * clamp01(explodeF);
+          const thick = Math.max(8, exCoreRadius > 0.5 ? exCoreRadius : exImpactRadius * 0.12);
+
+          // gaussian ring around waveR
+          const d = dist - waveR;
+          const ring = Math.exp(-(d * d) / (2 * thick * thick)) * exImpactStrength;
+
+          // blend: keep some center energy so it doesn’t go dead
+          impulse = lerp(centerImpulse, ring, 0.85);
+        } else {
+          impulse = centerImpulse;
         }
 
-        // Radial direction from impact <-> glyph
+        // ---------- DIRECTION ----------
+        // radial direction from impact point
         let rx = 0, ry = 0;
         if (dist > 1e-6) {
           rx = ddx / dist;
           ry = ddy / dist;
         }
 
-        // ✅ Real implode/explode:
-        // - explode = push AWAY from impact point
-        // - implode = pull TOWARD impact point
+        // explode away vs implode toward
         const tx = exImplode ? -rx : rx;
         const ty = exImplode ? -ry : ry;
 
-        // Blend random field toward the true radial direction
+        // Blend random field toward radial direction (this makes “true blast” possible)
+        // exImpactMix controls how radial it is
         dx = lerp(dx, tx, exImpactMix);
         dy = lerp(dy, ty, exImpactMix);
 
-        // normalize
         const dlen = Math.hypot(dx, dy);
         if (dlen > 1e-6) { dx /= dlen; dy /= dlen; }
 
-        // Directional shove (front/back = Z, left/right = X)
+        // Directional shove channel (separate from radial)
         if (exImpactDir === "back") pushZ = +exImpactPush * impulse;
         else if (exImpactDir === "front") pushZ = -exImpactPush * impulse;
         else if (exImpactDir === "right") pushX = +exImpactPush * impulse;
         else if (exImpactDir === "left") pushX = -exImpactPush * impulse;
       }
 
-      // -------------------------
-      // Shape controls
-      // -------------------------
+      // ---------- SHAPE CONTROLS ----------
       if (exShape === "ring") {
         const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
         const rx2 = dx * c - dy * s;
@@ -2365,9 +2352,7 @@ function playAnimation() {
       ox += pushX * explodeF;
       oz += pushZ * explodeF;
 
-      // -------------------------
-      // Rotation (legacy OR range)
-      // -------------------------
+      // ---------- ROTATION (legacy OR range) ----------
       let ax = exRotAxisBase;
       if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
 
@@ -2394,10 +2379,8 @@ function playAnimation() {
     arz += p.rz || 0;
     asc *= p.s || 1;
 
-    // Optional clip scale-down
     if (exClipScaleOn) asc *= 1 - exClipScaleDown * explodeF;
 
-    // Stash for collision / apply
     m.__tmpOx = ox; m.__tmpOy = oy; m.__tmpOz = oz;
     m.__tmpArx = arx; m.__tmpAry = ary; m.__tmpArz = arz;
     m.__tmpAsc = asc;
@@ -2408,7 +2391,6 @@ function playAnimation() {
     const thinMul = 1 - exDepthShrink * explodeF;
     m.depthF = baseF * thinMul;
 
-    // Keep channels updated
     m.animOffsetX = ox; m.animOffsetY = oy; m.animOffsetZ = oz;
     m.animRotX = arx; m.animRotY = ary; m.animRotZ = arz;
     m.animScale = asc;
@@ -2423,7 +2405,6 @@ function playAnimation() {
     }
     if (!anyExploding) return;
 
-    // Working positions (base + offsets)
     for (const m of flatMembers) {
       const [bx, by] = getBaseXYZ(m);
       m.__colX = bx + (m.__tmpOx || 0);
@@ -2538,7 +2519,6 @@ function playAnimation() {
       }
     }
 
-    // Write collision-adjusted offsets back to tmp offsets
     for (const m of flatMembers) {
       if ((m.explodeF || 0) <= 0.001) continue;
 
@@ -2557,19 +2537,16 @@ function playAnimation() {
   function applyToScene(m) {
     if (!m || !m.pivot || !m.group) return;
 
-    // Rotation
     m.pivot.rotation.x = (m.baseRotX || 0) + (m.__tmpArx || 0);
     m.pivot.rotation.y = (m.baseRotY || 0) + (m.__tmpAry || 0);
     m.pivot.rotation.z = (m.baseRotZ || 0) + (m.__tmpArz || 0);
 
-    // Scale
     const bsx = m.baseScaleX || 1;
     const bsy = m.baseScaleY || 1;
     const bsz = m.baseScaleZ || 1;
     const s = m.__tmpAsc || 1;
     m.group.scale.set(bsx * s, bsy * s, bsz);
 
-    // Position relative to cached base pose
     const [bx, by, bz] = getBaseXYZ(m);
 
     const ox = m.__tmpOx || 0;
@@ -2586,21 +2563,16 @@ function playAnimation() {
   function applyAll() {
     const [icx, icy] = impactPointFromPreset();
 
-    // ✅ keep viz in sync (center + radius + core radius)
     if (exImpactVizOn) updateImpactViz(icx, icy);
     else if (window.__wfImpactViz) window.__wfImpactViz.visible = false;
 
     for (const p of proxies) {
-      for (const m of p.members) {
-        computePerGlyph(p, m, icx, icy);
-      }
+      for (const m of p.members) computePerGlyph(p, m, icx, icy);
     }
 
     resolveExplodeCollisions2D();
 
-    for (let i = 0; i < flatMembers.length; i++) {
-      applyToScene(flatMembers[i]);
-    }
+    for (let i = 0; i < flatMembers.length; i++) applyToScene(flatMembers[i]);
 
     _applyCharZOffsetsFromParams();
   }
@@ -2617,7 +2589,6 @@ function playAnimation() {
     onUpdate: applyAll,
   };
 
-  // Reset channels
   for (const p of proxies) {
     p.f = alsoDepth ? minF : undefined;
     p.rx = 0;
@@ -2630,9 +2601,6 @@ function playAnimation() {
   const axis = (params.animAxis || "y").toLowerCase();
   const depthTarget = maxF;
 
-  // ------------------------------------------------------------
-  // Timeline per preset
-  // ------------------------------------------------------------
   if (preset === "blast") {
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
@@ -2661,7 +2629,6 @@ function playAnimation() {
     }
 
   } else if (preset === "explode") {
-    // Explode OUT → HOLD → (optional) IN → HOLD
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
     tl.to(
@@ -2722,6 +2689,7 @@ function playAnimation() {
 }
 
 window.playAnimation = playAnimation;
+
 
 
 
@@ -3554,6 +3522,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

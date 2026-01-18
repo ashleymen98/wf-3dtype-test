@@ -148,6 +148,8 @@
       ensureParam(params, "animExplodeImpactMix", 0.45);       // how much impact drives motion
       ensureParam(params, "animExplodeImpactProfile", "center"); // center|edge
       ensureParam(params, "animExplodeCoreRadius", 80); // NEW
+      ensureParam(params, "animExplodeCoherence", 0.75);
+
 
 
       ensureParam(params, "animExplodeClipScaleDown", 0.08);
@@ -1082,6 +1084,12 @@ fImpact.addBinding(params, "animExplodeImpactProfile", {
   label: "profile",
   options: { Center: "center", Edge: "edge" },
 });
+fImpact.addBinding(params, "animExplodeCoherence", {
+  label: "coherence",
+  min: 0,
+  max: 1,
+  step: 0.01,
+});
 
 fImpact.addBinding(params, "animExplodeImpactMix", {
   label: "impact mix",
@@ -1303,6 +1311,8 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
         "animExplodeCoreRadius",
 "animExplodeImpactVizOn",
 "animExplodeImpactPreset",
+          "animExplodeCoherence",
+
 
         "animExplodeImpactOn",
 "animExplodeImpactDir",
@@ -1498,3 +1508,4 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+

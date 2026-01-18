@@ -1300,6 +1300,10 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
       ]);
 
       const ANIM_KEYS = new Set([
+        "animExplodeCoreRadius",
+"animExplodeImpactVizOn",
+"animExplodeImpactPreset",
+
         "animExplodeImpactOn",
 "animExplodeImpactDir",
 "animExplodeImplode",
@@ -1494,23 +1498,3 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

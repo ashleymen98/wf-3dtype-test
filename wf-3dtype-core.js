@@ -1997,19 +1997,25 @@ function playAnimation() {
   const exRotMaxDeg = Number(params.animExplodeRotMaxDeg ?? 0);
   const exUseRotRange =
     Math.abs(exRotMinDeg) > 1e-6 || Math.abs(exRotMaxDeg) > 1e-6;
-  const exRotMinRad = THREE.MathUtils.degToRad(Math.min(exRotMinDeg, exRotMaxDeg));
-  const exRotMaxRad = THREE.MathUtils.degToRad(Math.max(exRotMinDeg, exRotMaxDeg));
+  const exRotMinRad = THREE.MathUtils.degToRad(
+    Math.min(exRotMinDeg, exRotMaxDeg)
+  );
+  const exRotMaxRad = THREE.MathUtils.degToRad(
+    Math.max(exRotMinDeg, exRotMaxDeg)
+  );
 
   // OUT/RETURN timing + easing
   const exHold = Math.max(0, Number(params.animExplodeHold ?? 0.15));
   const exReturnOn = !!params.animExplodeReturn;
-  const exReturnHold = Math.max(0, Number(params.animExplodeReturnHold ?? 0.10));
+  const exReturnHold = Math.max(0, Number(params.animExplodeReturnHold ?? 0.1));
   const exEaseOut = String(params.animExplodeEaseOut || "expo.out");
   const exEaseIn = String(params.animExplodeEaseIn || "expo.in");
 
   // Optional clip-scale
   const exClipScaleOn = !!params.animExplodeClipScaleOn;
-  const exClipScaleDown = clamp01(Number(params.animExplodeClipScaleDown ?? 0.08));
+  const exClipScaleDown = clamp01(
+    Number(params.animExplodeClipScaleDown ?? 0.08)
+  );
 
   // ------------------------------------------------------------
   // Impact-style explode
@@ -2017,7 +2023,9 @@ function playAnimation() {
   const exImpactOn = !!params.animExplodeImpactOn;
 
   // ✅ IMPORTANT: your UI uses animExplodeImpactPreset = center|tl|tr|bl|br
-  const exImpactPreset = String(params.animExplodeImpactPreset || "center").toLowerCase();
+  const exImpactPreset = String(
+    params.animExplodeImpactPreset || "center"
+  ).toLowerCase();
 
   // shove direction: front/back (Z) OR left/right (X)
   const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back|left|right
@@ -2033,7 +2041,10 @@ function playAnimation() {
     Number(params.animExplodeImpactRadius ?? params.animExplodeImpact ?? 260)
   );
 
-  const exImpactFalloff = Math.max(0.01, Number(params.animExplodeImpactFalloff ?? 2.2));
+  const exImpactFalloff = Math.max(
+    0.01,
+    Number(params.animExplodeImpactFalloff ?? 2.2)
+  );
 
   // bbox fractional offsets -1..1
   const exImpactX = Number(params.animExplodeImpactX ?? 0);
@@ -2043,10 +2054,12 @@ function playAnimation() {
   const exImpactPush = Number(params.animExplodeImpactZPush ?? 160);
 
   // how much the impact drives direction (0..1)
-  const exImpactMix = clamp01(Number(params.animExplodeImpactMix ?? 0.45)); // your UI default
+  const exImpactMix = clamp01(Number(params.animExplodeImpactMix ?? 0.45));
 
   // profile: center = strongest at impact point, edge = strongest away from point
-  const exImpactProfile = String(params.animExplodeImpactProfile || "center").toLowerCase(); // center|edge
+  const exImpactProfile = String(
+    params.animExplodeImpactProfile || "center"
+  ).toLowerCase(); // center|edge
 
   // Extra radial boost near hit
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
@@ -2095,17 +2108,26 @@ function playAnimation() {
 
   function getBaseXYZ(m) {
     const bx =
-      typeof m.__animBasePosX === "number" ? m.__animBasePosX : (m.pivot?.position?.x ?? 0);
+      typeof m.__animBasePosX === "number"
+        ? m.__animBasePosX
+        : m.pivot?.position?.x ?? 0;
     const by =
-      typeof m.__animBasePosY === "number" ? m.__animBasePosY : (m.pivot?.position?.y ?? 0);
+      typeof m.__animBasePosY === "number"
+        ? m.__animBasePosY
+        : m.pivot?.position?.y ?? 0;
     const bz =
-      typeof m.__animBasePosZ === "number" ? m.__animBasePosZ : (m.pivot?.position?.z ?? 0);
+      typeof m.__animBasePosZ === "number"
+        ? m.__animBasePosZ
+        : m.pivot?.position?.z ?? 0;
     return [bx, by, bz];
   }
 
   // Bounding box of the *static* layout (cached base positions)
   function getLayoutBounds() {
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
     for (const m of flatMembers) {
       if (!m || !m.pivot) continue;
       const [bx, by] = getBaseXYZ(m);
@@ -2114,7 +2136,8 @@ function playAnimation() {
       if (by < minY) minY = by;
       if (by > maxY) maxY = by;
     }
-    if (!isFinite(minX)) return { minX: 0, maxX: 0, minY: 0, maxY: 0, w: 1, h: 1 };
+    if (!isFinite(minX))
+      return { minX: 0, maxX: 0, minY: 0, maxY: 0, w: 1, h: 1 };
     const w = Math.max(1, maxX - minX);
     const h = Math.max(1, maxY - minY);
     return { minX, maxX, minY, maxY, w, h };
@@ -2129,13 +2152,17 @@ function playAnimation() {
 
     // NOTE: In Three, "top" is usually +Y.
     if (exImpactPreset === "tl") {
-      cx = bounds.minX; cy = bounds.maxY;
+      cx = bounds.minX;
+      cy = bounds.maxY;
     } else if (exImpactPreset === "tr") {
-      cx = bounds.maxX; cy = bounds.maxY;
+      cx = bounds.maxX;
+      cy = bounds.maxY;
     } else if (exImpactPreset === "bl") {
-      cx = bounds.minX; cy = bounds.minY;
+      cx = bounds.minX;
+      cy = bounds.minY;
     } else if (exImpactPreset === "br") {
-      cx = bounds.maxX; cy = bounds.minY;
+      cx = bounds.maxX;
+      cy = bounds.minY;
     }
 
     // ✅ Offsets are true -1..1 across bbox
@@ -2154,22 +2181,21 @@ function playAnimation() {
   }
 
   // ------------------------------------------------------------
-  // Debug viz helpers (outer ring + optional core ring + dot)
+  // ✅ PATCH 1: Debug viz in the SAME space as glyph pivots (fixes “dot stuck center”)
   // ------------------------------------------------------------
-  function getSceneRef() {
-    return (
-      (typeof scene !== "undefined" && scene) ||
-      window.scene ||
-      window.__scene ||
-      window.__WF_3DTYPE_SCENE__ ||
-      (window.__WF_3DTYPE_TOOL__ && window.__WF_3DTYPE_TOOL__.scene) ||
-      null
-    );
+  function getVizParent() {
+    const tool = window.__WF_3DTYPE_TOOL__;
+    if (tool?.textGroup) return tool.textGroup;
+    if (tool?.group) return tool.group;
+
+    // Fallback: parent of first glyph pivot (correct local space)
+    const first = flatMembers.find((m) => m?.pivot?.parent);
+    return first?.pivot?.parent || null;
   }
 
   function ensureImpactViz() {
-    const sceneRef = getSceneRef();
-    if (!sceneRef) return null;
+    const parent = getVizParent();
+    if (!parent) return null;
 
     let g = window.__wfImpactViz;
     if (!g) {
@@ -2186,7 +2212,7 @@ function playAnimation() {
       g.add(dot);
 
       // helper: make unit ring
-      function makeRing(name) {
+      function makeRing(name, opacity = 1) {
         const pts = [];
         const N = 96;
         for (let i = 0; i <= N; i++) {
@@ -2194,27 +2220,29 @@ function playAnimation() {
           pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
         }
         const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        const line = new THREE.Line(
-          geo,
-          new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false })
-        );
+        const mat = new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false });
+        mat.transparent = opacity < 1;
+        mat.opacity = opacity;
+        const line = new THREE.Line(geo, mat);
         line.name = name;
         line.renderOrder = 9999;
         return line;
       }
 
       // outer ring = impact radius
-      g.add(makeRing("ring"));
+      g.add(makeRing("ring", 1));
 
-      // inner ring = core radius (optional)
-      const core = makeRing("core");
-      core.material.opacity = 0.55;
-      core.material.transparent = true;
-      g.add(core);
+      // inner ring = core radius
+      g.add(makeRing("core", 0.55));
 
       g.renderOrder = 9999;
-      sceneRef.add(g);
+
+      // ✅ attach to text local space (NOT scene root)
+      parent.add(g);
       window.__wfImpactViz = g;
+    } else {
+      // If text got rebuilt, parent may change — reattach
+      if (g.parent !== parent) parent.add(g);
     }
 
     return g;
@@ -2226,7 +2254,7 @@ function playAnimation() {
 
     g.visible = true;
 
-    // ✅ Always update position
+    // ✅ Always update position (now in correct local space)
     g.position.set(cx, cy, exImpactVizZ);
 
     const ring = g.getObjectByName("ring");
@@ -2243,8 +2271,12 @@ function playAnimation() {
   // Two-phase application: compute -> collide -> apply
   // ------------------------------------------------------------
   function computePerGlyph(p, m, impactCX, impactCY) {
-    let ox = 0, oy = 0, oz = 0;
-    let arx = 0, ary = 0, arz = 0;
+    let ox = 0,
+      oy = 0,
+      oz = 0;
+    let arx = 0,
+      ary = 0,
+      arz = 0;
     let asc = 1;
 
     const explodeF = p.ex || 0;
@@ -2266,10 +2298,12 @@ function playAnimation() {
       m.explodeZLift = zSeed * exZLift * explodeF;
 
       // -------------------------
-      // Impact field (radius + core) + profile + mix
+      // ✅ PATCH 2: Core radius actually matters (broad vs core mix)
+      // + profile shaping + implode as pull-to-point
       // -------------------------
       let impulse = 0;
-      let pushX = 0, pushZ = 0;
+      let pushX = 0,
+        pushZ = 0;
 
       if (exImpactOn) {
         const [bx, by] = getBaseXYZ(m);
@@ -2280,46 +2314,53 @@ function playAnimation() {
 
         // broad field 0..1
         const tb = 1 - dist / exImpactRadius;
-        const broad = Math.pow(smooth01(tb), exImpactFalloff) * exImpactStrength;
+        const broad =
+          Math.pow(smooth01(tb), exImpactFalloff) * exImpactStrength;
 
         // core field 0..1 (tighter, punchier)
         let core = 0;
         if (exCoreRadius > 0.5) {
           const tc = 1 - dist / exCoreRadius;
-          core = Math.pow(smooth01(tc), Math.max(1.2, exImpactFalloff + 0.6)) * exImpactStrength;
+          core =
+            Math.pow(
+              smooth01(tc),
+              Math.max(1.2, exImpactFalloff + 0.6)
+            ) * exImpactStrength;
         }
 
-        // mix between broad + core
+        // ✅ mix broad/core (so core radius has an obvious effect)
         impulse = lerp(broad, core, exImpactMix);
 
         // profile shaping
         if (exImpactProfile === "edge") {
-          // edges move more: invert a broad-ish proximity
           const edgeT = 1 - dist / exImpactRadius;
-          const edgeBase = 1 - smooth01(edgeT); // 0 at center, 1 at edge/outside
-          // keep within text influence area
+          const edgeBase = 1 - smooth01(edgeT); // 0 at center, 1 near edge/outside
           const edge = Math.pow(clamp01(edgeBase), 1.4) * exImpactStrength;
           impulse = lerp(impulse, edge, 0.75);
         }
 
         // Direction from impact <-> glyph
-        let rx = 0, ry = 0;
+        let rx = 0,
+          ry = 0;
         if (dist > 1e-6) {
           rx = ddx / dist;
           ry = ddy / dist;
         }
 
-        // ✅ Explode pushes AWAY from impact, Implode pulls TOWARD impact
+        // Explode pushes AWAY from impact, Implode pulls TOWARD impact
         const tx = exImplode ? -rx : rx;
         const ty = exImplode ? -ry : ry;
 
-        // Blend our random field direction toward the impact direction
+        // Blend random direction toward impact direction
         dx = lerp(dx, tx, exImpactMix);
         dy = lerp(dy, ty, exImpactMix);
 
         // re-normalize
         const dlen = Math.hypot(dx, dy);
-        if (dlen > 1e-6) { dx /= dlen; dy /= dlen; }
+        if (dlen > 1e-6) {
+          dx /= dlen;
+          dy /= dlen;
+        }
 
         // Directional shove (front/back = Z, left/right = X)
         if (exImpactDir === "back") pushZ = +exImpactPush * impulse;
@@ -2332,11 +2373,12 @@ function playAnimation() {
       // Shape controls
       // -------------------------
       if (exShape === "ring") {
-        const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
+        const c = Math.cos(exRingAng),
+          s = Math.sin(exRingAng);
         const rx2 = dx * c - dy * s;
         const ry2 = dx * s + dy * c;
-        dx = rx2; dy = ry2;
-
+        dx = rx2;
+        dy = ry2;
       } else if (exShape === "sphere") {
         const zz = zSeed * 2 - 1;
         const radial = Math.sqrt(Math.max(0, 1 - zz * zz));
@@ -2344,9 +2386,13 @@ function playAnimation() {
         dy *= radial;
         oz += zz * (explodeAmt * exZSpread) * explodeF;
       } else if (exShape === "linex") {
-        dx = Math.sign(dx || 1); dy = 0; sy = 0;
+        dx = Math.sign(dx || 1);
+        dy = 0;
+        sy = 0;
       } else if (exShape === "liney") {
-        dx = 0; dy = Math.sign(dy || 1); sx = 0;
+        dx = 0;
+        dy = Math.sign(dy || 1);
+        sx = 0;
       }
 
       // Main XY offsets
@@ -2364,7 +2410,8 @@ function playAnimation() {
       // Rotation (legacy OR range)
       // -------------------------
       let ax = exRotAxisBase;
-      if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
+      if (ax === "random")
+        ax = stablePickAxis(m.overlayIndex || 0, "random", true);
 
       const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
 
@@ -2378,7 +2425,6 @@ function playAnimation() {
       if (ax === "x") arx += r;
       else if (ax === "y") ary += r;
       else arz += r;
-
     } else {
       m.explodeZLift = 0;
     }
@@ -2393,8 +2439,12 @@ function playAnimation() {
     if (exClipScaleOn) asc *= 1 - exClipScaleDown * explodeF;
 
     // Stash for collision / apply
-    m.__tmpOx = ox; m.__tmpOy = oy; m.__tmpOz = oz;
-    m.__tmpArx = arx; m.__tmpAry = ary; m.__tmpArz = arz;
+    m.__tmpOx = ox;
+    m.__tmpOy = oy;
+    m.__tmpOz = oz;
+    m.__tmpArx = arx;
+    m.__tmpAry = ary;
+    m.__tmpArz = arz;
     m.__tmpAsc = asc;
 
     m.explodeF = explodeF;
@@ -2404,8 +2454,12 @@ function playAnimation() {
     m.depthF = baseF * thinMul;
 
     // Keep channels updated
-    m.animOffsetX = ox; m.animOffsetY = oy; m.animOffsetZ = oz;
-    m.animRotX = arx; m.animRotY = ary; m.animRotZ = arz;
+    m.animOffsetX = ox;
+    m.animOffsetY = oy;
+    m.animOffsetZ = oz;
+    m.animRotX = arx;
+    m.animRotY = ary;
+    m.animRotZ = arz;
     m.animScale = asc;
   }
 
@@ -2414,7 +2468,10 @@ function playAnimation() {
 
     let anyExploding = false;
     for (let i = 0; i < flatMembers.length; i++) {
-      if ((flatMembers[i].explodeF || 0) > 0.001) { anyExploding = true; break; }
+      if ((flatMembers[i].explodeF || 0) > 0.001) {
+        anyExploding = true;
+        break;
+      }
     }
     if (!anyExploding) return;
 
@@ -2424,14 +2481,16 @@ function playAnimation() {
       m.__colX = bx + (m.__tmpOx || 0);
       m.__colY = by + (m.__tmpOy || 0);
       m.__colR = approxGlyphRadius(m);
-      m.__colSX = 0; m.__colSY = 0;
+      m.__colSX = 0;
+      m.__colSY = 0;
     }
 
     let grid = null;
     let cellSize = 1;
 
     function buildGrid() {
-      let rAvg = 0, n = 0;
+      let rAvg = 0,
+        n = 0;
       for (const m of flatMembers) {
         if ((m.explodeF || 0) <= 0.001) continue;
         rAvg += m.__colR || 0;
@@ -3552,6 +3611,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

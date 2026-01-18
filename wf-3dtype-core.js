@@ -1919,6 +1919,7 @@ function playAnimation() {
   const minF = Math.max(0, Number(params.animMinPct || 0) / 100);
   const maxF = Math.max(0, Number(params.animMaxPct || 100) / 100);
 
+  // Grouping
   let groups = [];
   if (params.animStaggerMode === "word") groups = wordGroups;
   else if (params.animStaggerMode === "line") groups = lineGroups;
@@ -1934,6 +1935,8 @@ function playAnimation() {
       s: 1,
       ex: 0,
       members,
+      __cx: 0, // group center cache
+      __cy: 0,
     }));
 
   // Flatten for collision + base caching
@@ -1941,7 +1944,6 @@ function playAnimation() {
   for (const p of proxies) for (const m of p.members) flatMembers.push(m);
 
   // ✅ BASE-POSE CACHE (CRITICAL FIX)
-  // Only cache the "rest" pose if it's missing.
   const alreadyCached =
     flatMembers.length &&
     flatMembers.every(
@@ -1991,8 +1993,6 @@ function playAnimation() {
   const exRandDir = !!params.animExplodeRandomDir;
 
   // Rotation variance:
-  // If BOTH min/max are 0 => use legacy rotDeg
-  // Else stable per-glyph random in [min,max]
   const exRotMinDeg = Number(params.animExplodeRotMinDeg ?? 0);
   const exRotMaxDeg = Number(params.animExplodeRotMaxDeg ?? 0);
   const exUseRotRange =
@@ -2019,10 +2019,7 @@ function playAnimation() {
   // ✅ UI uses animExplodeImpactPreset = center|tl|tr|bl|br
   const exImpactPreset = String(params.animExplodeImpactPreset || "center").toLowerCase();
 
-  // shove direction: front/back (Z) OR left/right (X)
   const exImpactDir = String(params.animExplodeImpactDir || "front").toLowerCase(); // front|back|left|right
-
-  // Implode pulls toward the impact point (not just invert)
   const exImplode = !!params.animExplodeImplode;
 
   const exImpactStrength = Number(params.animExplodeImpactStrength ?? 1.0);
@@ -2034,24 +2031,22 @@ function playAnimation() {
 
   const exImpactFalloff = Math.max(0.01, Number(params.animExplodeImpactFalloff ?? 2.2));
 
-  // bbox fractional offsets -1..1
+  // -1..1 offsets (direct)
   const exImpactX = Number(params.animExplodeImpactX ?? 0);
   const exImpactY = Number(params.animExplodeImpactY ?? 0);
 
-  // push amount used on Z(front/back) or X(left/right)
   const exImpactPush = Number(params.animExplodeImpactZPush ?? 160);
 
-  // how much the impact drives direction (0..1)
-  const exImpactMix = clamp01(Number(params.animExplodeImpactMix ?? 0.45));
+  const exImpactMix = clamp01(Number(params.animExplodeImpactMix ?? 0.45)); // 0..1
+  const exImpactProfile = String(params.animExplodeImpactProfile || "center").toLowerCase(); // center|edge
 
-  // profile: center|edge
-  const exImpactProfile = String(params.animExplodeImpactProfile || "center").toLowerCase();
-
-  // Extra radial boost near hit
   const exImpactRadialBoost = Number(params.animExplodeImpactRadialBoost ?? 0.55);
 
-  // ✅ Core radius: tight “blast core” footprint
   const exCoreRadius = Math.max(0, Number(params.animExplodeCoreRadius ?? 80));
+
+  // ✅ NEW: Coherence (grouped explode feel)
+  // 0 = per-char radial, 1 = word/line radial + slight per-char variation
+  const exCoherence = clamp01(Number(params.animExplodeCoherence ?? 0.75));
 
   // ------------------------------------------------------------
   // Debug viz
@@ -2081,7 +2076,6 @@ function playAnimation() {
     return a + (b - a) * t;
   }
 
-  // Small stable hash -> 0..1
   function stableRand01(i, salt) {
     let x = (i | 0) ^ ((salt | 0) + 0x9e3779b9);
     x ^= x >>> 16;
@@ -2102,7 +2096,6 @@ function playAnimation() {
     return [bx, by, bz];
   }
 
-  // Bounding box of the *static* layout (cached base positions)
   function getLayoutBounds() {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const m of flatMembers) {
@@ -2125,7 +2118,7 @@ function playAnimation() {
     let cx = (bounds.minX + bounds.maxX) * 0.5;
     let cy = (bounds.minY + bounds.maxY) * 0.5;
 
-    // NOTE: In Three, "top" is usually +Y.
+    // NOTE: Three "top" is usually +Y.
     if (exImpactPreset === "tl") {
       cx = bounds.minX; cy = bounds.maxY;
     } else if (exImpactPreset === "tr") {
@@ -2136,13 +2129,14 @@ function playAnimation() {
       cx = bounds.maxX; cy = bounds.minY;
     }
 
-    // ✅ true -1..1 offsets across bbox
+    // offsets are true -1..1 across bbox
     cx += exImpactX * (bounds.w * 0.5);
     cy += exImpactY * (bounds.h * 0.5);
 
     return [cx, cy];
   }
 
+  // Approx glyph radius for collision
   function approxGlyphRadius(m) {
     const size = Number(params.size ?? 64);
     const base = Math.max(2, size * 0.32);
@@ -2151,31 +2145,39 @@ function playAnimation() {
   }
 
   // ------------------------------------------------------------
-  // Debug viz (FIXED SPACE): parent to glyph-parent not scene root
+  // ✅ Debug viz (WORLD-SPACE, fixes “dot pinned”)
   // ------------------------------------------------------------
-  function getVizParent() {
-    const m0 = flatMembers && flatMembers[0];
-    const p = m0 && m0.pivot && m0.pivot.parent;
-    return p || null;
+  function getSceneRef() {
+    return (
+      (typeof scene !== "undefined" && scene) ||
+      window.scene ||
+      window.__scene ||
+      window.__WF_3DTYPE_SCENE__ ||
+      (window.__WF_3DTYPE_TOOL__ && window.__WF_3DTYPE_TOOL__.scene) ||
+      null
+    );
   }
 
-  function ensureImpactViz(parentObj) {
-    if (!parentObj) return null;
+  function getImpactSpaceObject() {
+    const m0 = flatMembers && flatMembers[0];
+    if (!m0) return null;
+    return (m0.pivot && (m0.pivot.parent || m0.pivot)) || m0.group || null;
+  }
+
+  function ensureImpactViz() {
+    const sceneRef = getSceneRef();
+    if (!sceneRef) return null;
 
     let g = window.__wfImpactViz;
-
-    // If it exists but is attached to a different parent, re-attach
-    if (g && g.parent !== parentObj) {
-      try { g.parent.remove(g); } catch (e) {}
-      try { parentObj.add(g); } catch (e) {}
-    }
-
     if (!g) {
       g = new THREE.Group();
       g.name = "__wfImpactViz";
+      g.matrixAutoUpdate = true;
 
-      const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false });
-      const dot = new THREE.Mesh(new THREE.SphereGeometry(6, 14, 14), mat);
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(6, 14, 14),
+        new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false })
+      );
       dot.name = "dot";
       dot.renderOrder = 9999;
       g.add(dot);
@@ -2204,23 +2206,27 @@ function playAnimation() {
       g.add(core);
 
       g.renderOrder = 9999;
-
-      parentObj.add(g);
+      sceneRef.add(g);
       window.__wfImpactViz = g;
     }
 
     return g;
   }
 
-  function updateImpactViz(cx, cy) {
-    const parentObj = getVizParent();
-    const g = ensureImpactViz(parentObj);
+  function updateImpactViz(icx, icy) {
+    const g = ensureImpactViz();
     if (!g) return;
+
+    const spaceObj = getImpactSpaceObject();
+    if (!spaceObj) return;
 
     g.visible = true;
 
-    // ✅ Since g is parented to the SAME SPACE as glyph pivots, cx/cy are correct
-    g.position.set(cx, cy, exImpactVizZ);
+    // Convert local(icx, icy, vizZ) in impact-space -> world
+    const v = new THREE.Vector3(icx, icy, exImpactVizZ);
+    spaceObj.updateMatrixWorld(true);
+    v.applyMatrix4(spaceObj.matrixWorld);
+    g.position.copy(v);
 
     const ring = g.getObjectByName("ring");
     if (ring) ring.scale.set(exImpactRadius, exImpactRadius, 1);
@@ -2229,6 +2235,26 @@ function playAnimation() {
     if (core) {
       core.visible = exCoreRadius > 0.5;
       if (core.visible) core.scale.set(exCoreRadius, exCoreRadius, 1);
+    }
+
+    g.updateMatrixWorld(true);
+  }
+
+  // ------------------------------------------------------------
+  // Group center cache (used by coherence)
+  // ------------------------------------------------------------
+  function updateGroupCenters() {
+    for (const p of proxies) {
+      let sx = 0, sy = 0, n = 0;
+      for (const m of p.members) {
+        if (!m || !m.pivot) continue;
+        const [bx, by] = getBaseXYZ(m);
+        sx += bx; sy += by; n++;
+      }
+      if (n > 0) {
+        p.__cx = sx / n;
+        p.__cy = sy / n;
+      }
     }
   }
 
@@ -2243,29 +2269,35 @@ function playAnimation() {
     const explodeF = p.ex || 0;
 
     if (explodeF !== 0) {
-      // Base random direction (kept, but impact can override it)
+      // Base random direction (your existing field)
       const a0 = (m._expU || 0) + exAng;
       let dx = Math.cos(a0);
       let dy = Math.sin(a0);
 
+      // Noise jitter (scale field)
       const n = 1 + (m._spinJitter || 0) * exNoise;
       let sx = exDX * exD * n;
       let sy = exDY * exD * n;
 
       const zSeed = m._expZ || 0;
+
+      // Stable Z layering lift
       m.explodeZLift = zSeed * exZLift * explodeF;
 
+      // -------------------------
+      // Impact field + Coherence
+      // -------------------------
       let impulse = 0;
       let pushX = 0, pushZ = 0;
 
       if (exImpactOn) {
         const [bx, by] = getBaseXYZ(m);
+
+        // Broad & core fields (0..)
         const ddx = bx - impactCX;
         const ddy = by - impactCY;
         const dist = Math.hypot(ddx, ddy);
 
-        // ---------- IMPULSE SHAPING ----------
-        // center profile: strongest near impact point
         const tb = 1 - dist / exImpactRadius;
         const broad = Math.pow(smooth01(tb), exImpactFalloff) * exImpactStrength;
 
@@ -2275,52 +2307,59 @@ function playAnimation() {
           core = Math.pow(smooth01(tc), Math.max(1.2, exImpactFalloff + 0.6)) * exImpactStrength;
         }
 
-        let centerImpulse = lerp(broad, core, exImpactMix);
+        impulse = lerp(broad, core, exImpactMix);
 
-        // edge profile: EXPANDING SHOCKWAVE (blast radius expands with explodeF)
-        // waveRadius grows 0 -> impactRadius as explodeF grows
         if (exImpactProfile === "edge") {
-          const waveR = exImpactRadius * clamp01(explodeF);
-          const thick = Math.max(8, exCoreRadius > 0.5 ? exCoreRadius : exImpactRadius * 0.12);
-
-          // gaussian ring around waveR
-          const d = dist - waveR;
-          const ring = Math.exp(-(d * d) / (2 * thick * thick)) * exImpactStrength;
-
-          // blend: keep some center energy so it doesn’t go dead
-          impulse = lerp(centerImpulse, ring, 0.85);
-        } else {
-          impulse = centerImpulse;
+          const edgeBase = 1 - smooth01(tb); // 0 at center, 1 near edge/outside
+          const edge = Math.pow(clamp01(edgeBase), 1.4) * exImpactStrength;
+          impulse = lerp(impulse, edge, 0.75);
         }
 
-        // ---------- DIRECTION ----------
-        // radial direction from impact point
-        let rx = 0, ry = 0;
-        if (dist > 1e-6) {
-          rx = ddx / dist;
-          ry = ddy / dist;
-        }
+        // ---- Coherent direction target ----
+        // glyph radial (from impact->glyph)
+        let gx = ddx, gy = ddy;
+        let gl = Math.hypot(gx, gy);
 
-        // explode away vs implode toward
-        const tx = exImplode ? -rx : rx;
-        const ty = exImplode ? -ry : ry;
+        // group radial (from impact->groupCenter)
+        let px = (p.__cx || 0) - impactCX;
+        let py = (p.__cy || 0) - impactCY;
+        let pl = Math.hypot(px, py);
 
-        // Blend random field toward radial direction (this makes “true blast” possible)
-        // exImpactMix controls how radial it is
+        if (gl > 1e-6) { gx /= gl; gy /= gl; } else { gx = 1; gy = 0; }
+        if (pl > 1e-6) { px /= pl; py /= pl; } else { px = gx; py = gy; }
+
+        // coherence: 0 => glyph radial, 1 => group radial
+        let tx = lerp(gx, px, exCoherence);
+        let ty = lerp(gy, py, exCoherence);
+
+        // implode pulls toward the impact point
+        if (exImplode) { tx = -tx; ty = -ty; }
+
+        // Add tiny per-glyph angle jitter so it isn't rigid
+        const jitter = (stableRand01(m.overlayIndex || 0, 9911) * 2 - 1) * (0.35 * exNoise);
+        const cj = Math.cos(jitter), sj = Math.sin(jitter);
+        const tx2 = tx * cj - ty * sj;
+        const ty2 = tx * sj + ty * cj;
+        tx = tx2; ty = ty2;
+
+        // Blend our random field direction toward the coherent radial direction
         dx = lerp(dx, tx, exImpactMix);
         dy = lerp(dy, ty, exImpactMix);
 
+        // normalize
         const dlen = Math.hypot(dx, dy);
         if (dlen > 1e-6) { dx /= dlen; dy /= dlen; }
 
-        // Directional shove channel (separate from radial)
+        // Directional shove
         if (exImpactDir === "back") pushZ = +exImpactPush * impulse;
         else if (exImpactDir === "front") pushZ = -exImpactPush * impulse;
         else if (exImpactDir === "right") pushX = +exImpactPush * impulse;
         else if (exImpactDir === "left") pushX = -exImpactPush * impulse;
       }
 
-      // ---------- SHAPE CONTROLS ----------
+      // -------------------------
+      // Shape controls
+      // -------------------------
       if (exShape === "ring") {
         const c = Math.cos(exRingAng), s = Math.sin(exRingAng);
         const rx2 = dx * c - dy * s;
@@ -2341,7 +2380,7 @@ function playAnimation() {
         dx = 0; dy = Math.sign(dy || 1); sx = 0;
       }
 
-      // Main XY offsets
+      // Main offsets
       const impactMul = 1 + exImpactRadialBoost * impulse;
 
       ox += dx * explodeAmt * sx * explodeF * impactMul;
@@ -2352,13 +2391,15 @@ function playAnimation() {
       ox += pushX * explodeF;
       oz += pushZ * explodeF;
 
-      // ---------- ROTATION (legacy OR range) ----------
+      // -------------------------
+      // Rotation (legacy OR range)
+      // -------------------------
       let ax = exRotAxisBase;
       if (ax === "random") ax = stablePickAxis(m.overlayIndex || 0, "random", true);
 
       const dir = stablePickSign(m.overlayIndex || 0, exRandDir);
 
-      let r = exRotRadLegacy * dir * explodeF; // legacy
+      let r = exRotRadLegacy * dir * explodeF;
       if (exUseRotRange) {
         const t = stableRand01(m.overlayIndex || 0, 1337);
         const mag = lerp(exRotMinRad, exRotMaxRad, t);
@@ -2379,8 +2420,10 @@ function playAnimation() {
     arz += p.rz || 0;
     asc *= p.s || 1;
 
+    // Optional clip scale-down
     if (exClipScaleOn) asc *= 1 - exClipScaleDown * explodeF;
 
+    // Stash
     m.__tmpOx = ox; m.__tmpOy = oy; m.__tmpOz = oz;
     m.__tmpArx = arx; m.__tmpAry = ary; m.__tmpArz = arz;
     m.__tmpAsc = asc;
@@ -2391,6 +2434,7 @@ function playAnimation() {
     const thinMul = 1 - exDepthShrink * explodeF;
     m.depthF = baseF * thinMul;
 
+    // Keep channels updated
     m.animOffsetX = ox; m.animOffsetY = oy; m.animOffsetZ = oz;
     m.animRotX = arx; m.animRotY = ary; m.animRotZ = arz;
     m.animScale = asc;
@@ -2561,18 +2605,26 @@ function playAnimation() {
   }
 
   function applyAll() {
+    // Update group centers every update (cheap)
+    updateGroupCenters();
+
     const [icx, icy] = impactPointFromPreset();
 
+    // ✅ debug viz follows center changes now
     if (exImpactVizOn) updateImpactViz(icx, icy);
     else if (window.__wfImpactViz) window.__wfImpactViz.visible = false;
 
     for (const p of proxies) {
-      for (const m of p.members) computePerGlyph(p, m, icx, icy);
+      for (const m of p.members) {
+        computePerGlyph(p, m, icx, icy);
+      }
     }
 
     resolveExplodeCollisions2D();
 
-    for (let i = 0; i < flatMembers.length; i++) applyToScene(flatMembers[i]);
+    for (let i = 0; i < flatMembers.length; i++) {
+      applyToScene(flatMembers[i]);
+    }
 
     _applyCharZOffsetsFromParams();
   }
@@ -2589,6 +2641,7 @@ function playAnimation() {
     onUpdate: applyAll,
   };
 
+  // Reset channels
   for (const p of proxies) {
     p.f = alsoDepth ? minF : undefined;
     p.rx = 0;
@@ -2601,6 +2654,7 @@ function playAnimation() {
   const axis = (params.animAxis || "y").toLowerCase();
   const depthTarget = maxF;
 
+  // Timeline
   if (preset === "blast") {
     tl = gsap.timeline({ repeat: shouldLoop ? -1 : 0 });
 
@@ -2689,6 +2743,7 @@ function playAnimation() {
 }
 
 window.playAnimation = playAnimation;
+
 
 
 
@@ -3522,6 +3577,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 

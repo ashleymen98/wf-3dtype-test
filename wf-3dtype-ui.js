@@ -1001,7 +1001,7 @@ fExplode.addBinding(params, "animExplodeShape", {
 fExplode.addBinding(params, "animExplodeRingAngle", { label: "ring angle", min: 0, max: 360, step: 1 });
 
 
-fExplode.addBinding(params, "animExplodeImpactPreset", {
+const bImpactPreset = fExplode.addBinding(params, "animExplodeImpactPreset", {
   label: "impact preset",
   options: {
     Center: "center",
@@ -1010,16 +1010,18 @@ fExplode.addBinding(params, "animExplodeImpactPreset", {
     "Bottom Left": "bl",
     "Bottom Right": "br",
   },
-}).on("change", () => {
+});
+
+bImpactPreset.on("change", () => {
   const p = params.animExplodeImpactPreset;
 
   // normalized -1..1 space
   const map = {
     center: [0, 0],
-    tl: [-0.8, -0.8],
-    tr: [0.8, -0.8],
-    bl: [-0.8, 0.8],
-    br: [0.8, 0.8],
+    tl: [-0.8, 0.8],
+    tr: [0.8, 0.8],
+    bl: [-0.8, -0.8],
+    br: [0.8, -0.8],
   };
 
   const v = map[p] || [0, 0];
@@ -1031,6 +1033,7 @@ fExplode.addBinding(params, "animExplodeImpactPreset", {
 
   if (window.__tp_animPlaying) window.playAnimation();
 });
+
 
 
 // Z controls
@@ -1051,7 +1054,6 @@ fExplode.addBinding(params, "animExplodeRandomDir", { label: "random dir" });
 fExplode.addBinding(params, "animExplodeRotDeg", { label: "rot deg (legacy)", min: 0, max: 720, step: 5 });
 fExplode.addBinding(params, "animExplodeRotMinDeg", { label: "rot min", min: 0, max: 720, step: 1 });
 fExplode.addBinding(params, "animExplodeRotMaxDeg", { label: "rot max", min: 0, max: 720, step: 1 });
-fImpact.addBinding(params, "animExplodeCoreRadius", { label: "core radius", min: 0, max: 800, step: 5 });
 
 // Impact (mass hit)
 const fImpact = fExplode.addFolder({ title: "Impact" });
@@ -1066,6 +1068,8 @@ fImpact.addBinding(params, "animExplodeImpactDir", {
   },
 });
 fImpact.addBinding(params, "animExplodeImplode", { label: "implode" });
+      fImpact.addBinding(params, "animExplodeCoreRadius", { label: "core radius", min: 0, max: 800, step: 5 });
+
 
       fImpact.addBinding(params, "animExplodeImpactVizOn", { label: "show impact" });
 
@@ -1490,6 +1494,7 @@ fClip.addBinding(params, "animExplodeClipScaleDown", { label: "amount", min: 0, 
     buildEverything();
   } // end mountUI
 })();
+
 
 
 

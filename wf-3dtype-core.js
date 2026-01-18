@@ -1648,7 +1648,7 @@ baseRotCZ: rot.rotation.z,
         baseGroupY: group.position.y,
         baseGroupZ: group.position.z,
         pivot,
-baseRotX: pivot.rotation.x,
+        baseRotX: pivot.rotation.x,
 baseRotY: pivot.rotation.y,
 baseRotZ: pivot.rotation.z,
 
@@ -3522,6 +3522,7 @@ window[TOOL_KEY].cleanup = () => {
   document.documentElement.style.overflow = prevOverflowHtml;
   document.body.style.overflow = prevOverflowBody;
 };
+
 
 
 
